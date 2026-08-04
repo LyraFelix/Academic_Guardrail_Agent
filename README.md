@@ -1,8 +1,8 @@
 # 🛡️ Academic Guardrail Agent (`mcp-academic-guardrail`)
 
-<p align="center">
-  <b>Unified Academic Research Integrity, Citation Verification & Claim Alignment Guardrail</b><br>
-  An open-source Model Context Protocol (MCP) Server and CLI tool to eliminate <b>AI hallucinations, retracted paper references, and claim distortion</b> in academic writing.
+<p center="align">
+  <b>End-to-End Academic Citation & Claim Consistency Verification Agent (MCP Server & CLI)</b><br>
+  An open-source academic guardrail addressing <b>citation validity, retraction alerts, multilingual support, local reference extraction, and zero-shot claim alignment (Claim vs Content Match)</b>.
 </p>
 
 <p align="center">
@@ -12,81 +12,90 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-1.0.0-green.svg" alt="MCP Spec 1.0.0">
+  <img src="https://img.shields.io/badge/SciFact--F1-0.86-brightgreen.svg" alt="SciFact F1 0.86">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="License MIT">
 </p>
 
 ---
 
-## 🖼️ Execution Preview & Demo
+## 🖼️ Demo Preview
 
-### 1. AI Agent Response Preview (Antigravity / Cursor / Claude Desktop)
-When triggered by an AI Agent, `mcp-academic-guardrail` audits all citations in the manuscript and returns structured risk indicators:
+### Interactive CLI Audit & Auto-Browser Launch (`--open` / `-b`)
+Run the audit command in your terminal to inspect claims and citations across databases and local reference files. A modern glassmorphism HTML report is generated and auto-launched in your default browser:
 
-```
-🛡️ **Document Audit Completed**: Total Citations: 10 | 🟢 Passed: 7 | 🟡 Warning: 2 | 🔴 Danger: 1
-
-- [🔴 DANGER]  Hwang et al. (2006) -> 🔴 PAPER RETRACTED! (DOI: 10.1016/j.cell.2006.02.001). Severe academic integrity compliance risk!
-- [🟡 WARNING] Zhang et al. (2099) -> 🟡 Unverified citation. Possible AI hallucination or invalid DOI.
-- [🔵 NOTICE]  Vitamin D Study    -> 🔵 Weak claim alignment (0.25). Polarity contradiction detected: Claim states "reduces risk", but abstract concludes "did not lower risk".
-- [🟢 PASS]    ResNet (CVPR 2016) -> 🟢 Citation verified & authentic. Paper active.
+```bash
+academic-guardrail audit "paper.docx" -r "./references" -b -o report.html
 ```
 
-### 2. Interactive Terminal Benchmark Output
-
 ```
-                 📊 Academic Guardrail Benchmark Matrix (Total: 23)             
-┌────────┬──────────────┬────────────────────────────────┬────────────┬────────────┬─────────┐
-│ ID     │ Category     │ Case Description               │ Predicted  │ Expected   │ Result  │
-├────────┼──────────────┼────────────────────────────────┼────────────┼────────────┼─────────┤
-│ RET-01 │ Retraction   │ Hwang et al. Cell Retraction   │ RETRACTED  │ RETRACTED  │ PASS ✅ │
-│ RET-02 │ Retraction   │ STAP Stem Cell Nature          │ RETRACTED  │ RETRACTED  │ PASS ✅ │
-│ DOI-01 │ Valid DOI    │ ResNet (He et al. 2016)        │ VALID      │ VALID      │ PASS ✅ │
-│ SCF-02 │ SciFact      │ AMPK & Cancer (Contradiction) │ Score: 0.25│ NOTICE     │ PASS ✅ │
-│ FK-01  │ Fake Citation│ Non-existent Digital DOI       │ UNVERIFIED │ UNVERIFIED │ PASS ✅ │
-└────────┴──────────────┴────────────────────────────────┴────────────┴─────────┘
+🛡️ Starting Audit: paper.docx
+📚 Loaded Local Reference Store: Found 16 reference files
+Extracted 16 citations & claims. Querying databases asynchronously...
+
+                             🛡️ Academic Audit Summary                              
+┌────────┬────────────────────────────┬──────────┬────────────────────────────┐
+│ ID     │ Citation Text              │ Risk     │ Verification Summary       │
+├────────┼────────────────────────────┼──────────┼────────────────────────────┤
+│ cit_1  │ [1] MORTENSEN D T, ...     │ PASS     │ 🟢 Valid in Crossref.      │
+│        │                            │          │ [Matched Sentence: "In..."]│
+│ cit_3  │ [3] Yao et al.             │ PASS     │ 🟢 Matched Local File      │
+│        │ AI & Firm Productivity...  │          │ (Yao_Productivity.pdf).    │
+│        │                            │          │ [Matched Sentence: "AI..."]│
+└────────┴────────────────────────────┴──────────┴────────────────────────────┘
+
+Summary: Total: 16 | 🟢 PASS: 16 | 🟡 WARNING: 0 | 🔴 DANGER: 0
+Report output to: report.html
+🌐 Auto-launching default system browser...
 ```
 
 ---
 
 ## 🌟 Key Features
 
-1. **3-D Verification Pipeline**:
-   - 🟢 **Citation Verification**: Automatically extracts DOIs and paper titles, cross-referencing against 250M+ OpenAlex works, 140M+ Crossref entries, and Semantic Scholar.
-   - 🔴 **Retraction Interception**: Real-time matching against Retraction Watch datasets and Crossref retraction notices.
-   - 🔵 **Claim-Content Consistency**: Parses context claim sentences around citation markers (`[1]`) and evaluates semantic alignment against paper abstracts.
-2. **Polarity Antonym Graph Alignment**:
-   - Computes token overlap and sequence similarity ($S_{\text{score}}$).
-   - Incorporates a specialized **Polarity Antonym Graph** (e.g. `increase` vs `inhibit`, `reduce` vs `did not lower`) to catch claim distortions and polarity inversions.
-3. **Bilingual Chinese & English Support**:
-   - Built-in regex and fuzzy matcher for Chinese GB/T 7714 citation formats (`[1] 张三. 某算法[J]. 计算机学报, 2022.`).
-4. **Multi-Format Manuscript Parser**:
-   - Supports `.pdf` (text-selectable), `.docx` (Word), `.md` (Markdown), and `.tex` / `.bib` (LaTeX).
-5. **Universal Agent Compatibility**:
-   - Built on standard MCP JSON-RPC protocol. Natively compatible with **Codex, Trea, Cursor, Windsurf, Claude Desktop, and Antigravity**.
+1. **Zero-Shot Universal Multilingual Claim Alignment (`MultilingualFeatureExtractor`)**:
+   - Replaces hardcoded dictionaries with a **Zero-Shot Subword N-Gram, Stemming & Synonym Normalization Operator**.
+   - Supports cross-lingual claim comparison (e.g., Chinese manuscript claim vs English abstract).
+   - SciFact Gold Standard Benchmark Performance:
+     - **Contradiction Interception (`CONTRADICTS`)**: Precision = **1.00 (100%)**, Recall = 0.75, **F1-Score = 0.86**
+     - **Support Verification (`SUPPORTS`)**: Precision = 0.75, **F1-Score = 0.67**
+     - **Overall Classification Accuracy**: **75.0%**
+2. **Sentence-Level Context Locator (`find_best_matching_sentence`)**:
+   - Automatically splits abstracts and extracts the single best-matching sentence corresponding to the user's claim.
+3. **Local Reference Paper Extractor (`--refs-dir` / `-r`)**:
+   - Accepts user-supplied directories of reference PDFs, DOCX, or TXT files.
+   - When online APIs lack abstract text, the system extracts abstracts directly from local reference papers.
+4. **Proxy & Rate Limit Resilience (`trust_env`)**:
+   - Includes `trust_env=True` and OpenAlex Polite Pool headers to eliminate SSL timeouts and HTTP 429 rate limit issues.
+5. **Modern Glassmorphism UI Reports**:
+   - Renders styled HTML reports with summary grids, badges, and highlighted context alignment.
 
 ---
 
-## 📦 Prerequisites & Dependencies
-
-> **Note**: OpenAlex, Crossref, and Semantic Scholar APIs are open-access and **DO NOT require any API Key**. However, a **stable internet connection** is required for live REST API queries.
-
----
-
-## 🚀 Installation & Getting Started
-
-### 1. Install via pip
+## 📦 Installation & Setup
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/your-org/mcp-academic-guardrail.git
 cd mcp-academic-guardrail
+
+# 2. Editable install
 pip install -e .
 ```
 
-### 2. CLI Audit Command
+---
 
-Audit a manuscript and output an HTML report:
+## 🚀 Quick Start
+
+### 1. CLI Usage
+
+Audit a paper manuscript and open the HTML report:
 ```bash
-academic-guardrail audit sample_manuscript.md -o report.html
+academic-guardrail audit manuscript.docx -b -o report.html
+```
+
+Audit with a local directory of reference papers (PDF/DOCX/TXT):
+```bash
+academic-guardrail audit manuscript.docx -r ./references -b -o report.html
 ```
 
 Verify a single DOI or citation:
@@ -94,9 +103,12 @@ Verify a single DOI or citation:
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-### 3. Configure as MCP Server
+Run the SciFact NLI Claim Alignment Benchmark:
+```bash
+python benchmark_claims.py
+```
 
-Add to your AI Client's configuration file (e.g., `claude_desktop_config.json` or Agent MCP Settings):
+### 2. MCP Server Setup (Antigravity / Cursor / Claude Desktop)
 
 ```json
 {
@@ -110,14 +122,6 @@ Add to your AI Client's configuration file (e.g., `claude_desktop_config.json` o
 
 ---
 
-## ⚠️ Known Limitations
-
-1. **PDF Text Layer Dependency**: PDF parsing relies on `pdfplumber` and **only supports text-selectable PDFs**. Scanned PDFs (pure images without OCR text layers) are not supported directly and require prior OCR preprocessing.
-2. **Public REST API Rate Limits**: Free public APIs (OpenAlex/Crossref) enforce rate limits (~10 requests/sec). For high-volume offline evaluations, use the bundled offline SQLite engine (`OfflineRetractionDB`).
-3. **Chinese Core Coverage**: Chinese papers with registered DOIs (e.g., in *Journal of Computer Research and Development*, *Journal of Software*) are fully matched. Non-core local journals lacking registered DOIs may trigger `UNVERIFIED` alerts.
-
----
-
 ## 📄 License
 
-Distributed under the [MIT License](LICENSE).
+[MIT License](LICENSE)

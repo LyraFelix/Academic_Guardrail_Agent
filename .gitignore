@@ -46,6 +46,5 @@ env/
 *.swo
 
 # Project specific generated output reports
-report.html
-audit_report.html
+*.html
 *.log

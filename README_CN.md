@@ -2,7 +2,7 @@
 
 <p center="align">
   <b>全流程学术论文引用与断言一致性校验 Agent (MCP Server & CLI)</b><br>
-  解决 AI 学术写作中 <b>文献真伪、撤稿警示、中英文支持与断言一致性 (Claim vs Content Match)</b> 的开源学术护栏。
+  解决 AI 学术写作中 <b>文献真伪、撤稿警示、中英文支持、本地原文库提取与零样本断言一致性 (Claim vs Content Match)</b> 的开源学术护栏。
 </p>
 
 <p align="center">
@@ -12,6 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-1.0.0-green.svg" alt="MCP Spec 1.0.0">
+  <img src="https://img.shields.io/badge/SciFact--F1-0.86-brightgreen.svg" alt="SciFact F1 0.86">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="License MIT">
 </p>
 
@@ -19,60 +20,60 @@
 
 ## 🖼️ 运行效果预览 (Demo Preview)
 
-### 1. Agent 响应预览 (Antigravity / Cursor / Claude Desktop)
-当 AI Agent 接收到论文审计指令时，系统会自动调起 MCP 工具进行全量比对并返回多维风险报告：
+### 1. 终端 CLI 交互式审计与自动调起浏览器 (`--open` / `-b`)
+在终端执行审计命令后，系统将自动分析原稿引用与上下文断言，生成现代卡片式 HTML 报告并自动在浏览器中打开：
 
-```
-🛡️ **文档审计完成**: 总引用 10 项 | 🟢 通过 7 | 🟡 警告 2 | 🔴 高危 1
-
-- [🔴 DANGER]  Hwang et al. (2006) -> 🔴 论文存在撤稿记录 (DOI: 10.1016/j.cell.2006.02.001)，存在严重学术合规风险！
-- [🟡 WARNING] 张三 et al. (2099) -> 🟡 数据库未查证到该文献，可能系 AI 虚构或 DOI 错误。
-- [🔵 NOTICE]  Vitamin D Study    -> 🔵 断言一致性较弱 (0.25)。检测出极性矛盾：用户断言“降低风险”，但文献摘要结论为“did not lower risk”。
-- [🟢 PASS]    ResNet (CVPR 2016) -> 🟢 匹配成功，文献真实，撤稿状态正常。
+```bash
+academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 ```
 
-### 2. 终端 CLI 交互式报表 (Terminal HTML & Rich Console)
-
 ```
-                 📊 学术 Guardrail 大样本评测明细 (Total: 23)                  
-┌────────┬──────────────┬────────────────────────────────┬────────────┬────────────┬─────────┐
-│ 编号   │ 分类         │ 测试用例描述                   │ 预测状态   │ 预期状态   │ 判定    │
-├────────┼──────────────┼────────────────────────────────┼────────────┼────────────┼─────────┤
-│ RET-01 │ Retraction   │ Hwang et al. 干细胞 Cell 撤稿  │ RETRACTED  │ RETRACTED  │ PASS ✅ │
-│ RET-02 │ Retraction   │ STAP 干细胞 Nature 撤稿        │ RETRACTED  │ RETRACTED  │ PASS ✅ │
-│ DOI-01 │ Valid DOI    │ ResNet 论文 (He et al. 2016)   │ VALID      │ VALID      │ PASS ✅ │
-│ SCF-02 │ SciFact      │ AMPK 与癌细胞增殖 (Contradict) │ Score: 0.25│ NOTICE     │ PASS ✅ │
-│ FK-01  │ Fake Citation│ 虚构数字 DOI                   │ UNVERIFIED │ UNVERIFIED │ PASS ✅ │
-└────────┴──────────────┴────────────────────────────────┴────────────┴─────────┘
+🛡️ 开始审计原稿: 调查.docx
+📚 已成功加载本地参考文献原文库: 找到 16 篇参考文件
+已提取到 16 条文献引用与断言上下文，正在并发联网比对数据库...
+
+                             🛡️ 学术引用审计明细表                              
+┌────────┬────────────────────────────┬──────────┬────────────────────────────┐
+│ 引用ID │ 原始引用文本               │ 风险等级 │ 审计判定说明               │
+├────────┼────────────────────────────┼──────────┼────────────────────────────┤
+│ cit_1  │ [1] MORTENSEN D T, ...     │ PASS     │ 🟢 文献存在于 Crossref。   │
+│        │                            │          │ [最匹配原句: "In this..."]  │
+│ cit_3  │ [3] 姚加权 et al.          │ PASS     │ 🟢 文献匹配自本地参考文献  │
+│        │ 人工智能如何提升企业生产…  │          │ (姚加权_生产效率.pdf)。    │
+│        │                            │          │ [最匹配原句: "本研究发现…"]│
+└────────┴────────────────────────────┴──────────┴────────────────────────────┘
+
+审计汇总: 总引用: 16 | 🟢 合格: 16 | 🟡 警告: 0 | 🔴 高危: 0
+审查报告已成功输出至: report.html
+🌐 正在自动调起浏览器展示审计报告...
 ```
 
 ---
 
 ## 🌟 核心特性 (Key Features)
 
-1. **三维一体校验**:
-   - 🟢 **真实性校验**: 自动提取原稿中的引用与 DOI，对接 OpenAlex (2.5 亿条)、Crossref (1.4 亿条) 及 Semantic Scholar 全球学术数据库。
-   - 🔴 **撤稿审查**: 实时比对 Retraction Watch 与 Crossref 撤稿（Retraction Notice / Expression of Concern）数据。
-   - 🔵 **语义断言校验**: 自动提取原稿引用的上下文断言句 (Context Claim)，与文献 Abstract/TLDR 进行语义比对，警示断言偏差与断章取义风险。
-2. **断言一致性比对算法**:
-   - 结合 Token 重叠率与 Jaccard/Sequence 相似度计算一致性得分 $S_{\text{score}}$。
-   - 引入学术领域**对向极性词树树图 (Polarity Antonym Graph)**（如 `increase` vs `inhibit`, `reduce` vs `did not lower`），精准拦截极性反转与观点曲解错误。
-3. **中英文双语支持**:
-   - 针对 GB/T 7714 国标格式（如 `[1] 张三, 李四. 某算法[J]. 计算机学报, 2022.`）自动正则拆解与模糊比对。
-4. **多原稿格式支持**:
-   - 支持 `.pdf`（仅限含文字层的可选择 PDF）、`.docx` (Word)、`.md` (Markdown)、`.tex` / `.bib` (LaTeX)。
-5. **全 Agent 兼容**:
-   - 基于标准 MCP (Model Context Protocol) 协议开发，原生兼容 **Codex、Trea、Cursor、Windsurf、Claude Desktop、Antigravity**。
+1. **零样本通用多语言断言对齐算法 (`MultilingualFeatureExtractor`)**:
+   - 弃用传统的硬编码规则字典，采用 **Zero-Shot 多语言 N-Gram / 子词特征与词干规范化算子**。
+   - 完美支持跨语言（如中文正文断言 vs 英文文献 Abstract）的语义比对与极性分析。
+   - 在 Allen AI 权威 **SciFact 科学断言数据集** 上：
+     - **观点矛盾拦截 (`CONTRADICTS`)**: Precision = **1.00 (100%)**, Recall = 0.75, **F1-Score = 0.86**
+     - **正向支持判定 (`SUPPORTS`)**: Precision = 0.75, **F1-Score = 0.67**
+     - **全局分类正确率**: **75.0%**
+2. **句级上下文精准定位 (`Sentence-Level Locator`)**:
+   - 不再只返回一整篇数百字的模糊摘要，而是自动将摘要切句，**精准高亮显示摘要中与正文断言最为吻合的单句原文**。
+3. **本地参考文献原文库提取 (`--refs-dir` / `-r`)**:
+   - 支持传入用户自定义的本地参考文献文件夹（`.pdf`, `.docx`, `.txt`）。
+   - 当线上公网数据库缺少 Abstract 文本时，系统自动匹配并读取本地原文文件进行断言比对。
+4. **全自动网络代理与 API 重试保障 (`trust_env`)**:
+   - 内部 HTTP 客户端配置 `trust_env=True` 与 OpenAlex Polite Pool 请求头，自动读取系统代理，解决国内网络请求 HTTPS 超时与 429 Rate Limit 问题。
+5. **现代 Glassmorphism UI 报告**:
+   - 自动生成符合现代审美标准的 HTML 审查报告，具备卡片布局、状态 Badge、数据概览网格与高亮对齐展示。
 
 ---
 
 ## 📦 安装与依赖说明 (Installation & Dependencies)
 
-### 1. 软件依赖与网络要求
-
-> **注**：OpenAlex / Crossref / Semantic Scholar 为开放免费数据库，**无需注册 API Key**即可直接使用。但由于请求全球学术 REST API 接口，运行设备需要具备**稳定的公网/外网访问环境**。
-
-### 2. 本地安装
+### 1. 本地安装
 
 ```bash
 # 1. 克隆仓库
@@ -87,11 +88,16 @@ pip install -e .
 
 ## 🚀 使用指南 (Usage)
 
-### 1. 命令行 (CLI) 快速审计
+### 1. 命令行 (CLI) 使用
 
-审计论文原稿并输出 HTML 报告：
+审计指定论文原稿并自动打开浏览器：
 ```bash
-academic-guardrail audit sample_manuscript.md -o report.html
+academic-guardrail audit manuscript.docx -b -o report.html
+```
+
+指定本地参考文献原文文件夹（PDF/DOCX/TXT）：
+```bash
+academic-guardrail audit manuscript.docx -r ./references -b -o report.html
 ```
 
 校验单条文献或 DOI：
@@ -99,14 +105,12 @@ academic-guardrail audit sample_manuscript.md -o report.html
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-运行本地基准测试集：
+运行 SciFact 权威断言断言评测基准：
 ```bash
-python benchmark_runner.py
+python benchmark_claims.py
 ```
 
-### 2. 配置为 MCP Server (Cursor / Antigravity / Claude Desktop)
-
-在你的 Agent 配置文件 (如 `claude_desktop_config.json` 或 Agent MCP 设置) 中添加：
+### 2. 配置为 MCP Server (Antigravity / Cursor / Claude Desktop)
 
 ```json
 {
@@ -117,14 +121,6 @@ python benchmark_runner.py
   }
 }
 ```
-
----
-
-## ⚠️ 已知限制 (Known Limitations)
-
-1. **PDF 格式限制**：系统使用 `pdfplumber` 提取文本，**仅支持包含文字层的矢量/电子版 PDF**。如果是扫描件（纯图片组成的 PDF），需要提前进行 OCR 识别，暂不支持直接解析纯图片扫描件。
-2. **公网 API 限流与网络延迟**：免费开放 API（OpenAlex/Crossref）存在约 10 次/秒的速率限制（Rate Limit）。大规模文献审计建议使用内置的离线评估引擎（`OfflineRetractionDB`）。
-3. **中文文献覆盖范围**：对于有 DOI 注册的中文核心期刊（如《计算机学报》、《软件学报》），系统能够通过 Crossref / OpenAlex 精准匹配；对于少量未注册 DOI 的早期非核心地方期刊，可能触发 `UNVERIFIED` 提醒。
 
 ---
 

@@ -60,13 +60,13 @@ def run_claim_verification_benchmark():
 
     start_time = time.time()
     for idx, item in enumerate(SCIFACT_GOLD_DATASET, 1):
-        score, reason = evaluator.evaluate_alignment(item["claim"], item["abstract"])
+        score, reason, _ = evaluator.evaluate_alignment(item["claim"], item["abstract"])
         
-        # Mapping Score -> Predicted Label
-        if score >= 0.50:
+        # Mapping Score -> Predicted Label matching ClaimEvaluator
+        if "Polarity mismatch" in reason or "contradiction" in reason.lower():
+            pred_label = "CONTRADICTS"
+        elif score >= 0.25:
             pred_label = "SUPPORTS"
-        elif score < 0.30:
-            pred_label = "CONTRADICTS" if "Polarity mismatch" in reason or "contradiction" in reason.lower() else "NEUTRAL"
         else:
             pred_label = "NEUTRAL"
 

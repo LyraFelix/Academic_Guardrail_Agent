@@ -27,6 +27,10 @@ from academic_guardrail.providers.chinese_academic import ChineseAcademicProvide
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
 
 
+from academic_guardrail.core.ref_store import LocalRefStore
+from typing import Optional
+
+
 @click.group()
 def main():
     """🛡️ Academic Guardrail Agent CLI Tool"""
@@ -36,11 +40,16 @@ def main():
 @main.command()
 @click.argument('file_path', type=click.Path(exists=True))
 @click.option('--output', '-o', type=click.Path(), help='Output report file path (.html or .md)')
+@click.option('--refs-dir', '-r', type=click.Path(exists=True), help='包含参考文献 PDF/DOCX/TXT 原文的本地文件夹')
 @click.option('--open', '-b', 'open_browser', is_flag=True, help='审计完成后自动在系统浏览器中打开 HTML 报告')
-def audit(file_path: str, output: str, open_browser: bool):
+def audit(file_path: str, output: str, refs_dir: Optional[str], open_browser: bool):
     """审计指定原稿 (.pdf, .docx, .md, .tex) 中的文献引用与断言."""
     console.print(f"[bold blue]🛡️ 开始审计原稿:[/bold blue] {file_path}")
     
+    ref_store = LocalRefStore(refs_dir) if refs_dir else None
+    if ref_store and ref_store.papers:
+        console.print(f"[bold green]📚 已成功加载本地参考文献原文库:[/bold green] 找到 {len(ref_store.papers)} 篇参考文件")
+
     async def _verify_single(cit, claim, provider, evaluator):
         verify_res = await provider.verify_citation(title=cit.title or cit.raw_text, doi=cit.doi)
         
@@ -51,20 +60,32 @@ def audit(file_path: str, output: str, open_browser: bool):
         elif verify_res.get("matched"):
             abstract = verify_res.get("abstract", "")
             source_name = verify_res.get("source", "权威数据库")
-            if not abstract:
+            
+            # Fallback to local reference file if online abstract is missing
+            local_abstract = None
+            if not abstract and ref_store:
+                match_res = ref_store.find_abstract_for_citation(cit.title or "", cit.raw_text)
+                if match_res:
+                    local_abstract, ref_filename = match_res
+                    source_name = f"本地参考文献 ({ref_filename})"
+
+            target_abstract = abstract or local_abstract
+
+            if not target_abstract:
                 status = VerificationStatus.VALID
                 risk = RiskLevel.PASS
-                msg = f"🟢 文献存在于{source_name}。因数据库未收录摘要原文，已完成元数据校验并跳过断言比对。"
+                msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验并跳过断言比对。"
             else:
-                score, reason = evaluator.evaluate_alignment(claim.claim_sentence, abstract)
-                if score < 0.40:
+                score, reason, best_sent = evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
+                context_str = f" [最匹配的原句: \"{best_sent[:120]}...\"]" if best_sent else ""
+                if score < 0.20:
                     status = VerificationStatus.CLAIM_MISMATCH
                     risk = RiskLevel.NOTICE
-                    msg = f"🔵 正文断言与摘要匹配度较低 ({score:.2f})。{reason}"
+                    msg = f"🔵 正文断言与{source_name}摘要语义匹配度较弱 ({score:.2f})。{reason}{context_str}"
                 else:
                     status = VerificationStatus.VALID
                     risk = RiskLevel.PASS
-                    msg = f"🟢 正文断言与文献摘要语义高度吻合 ({score:.2f})。{reason}"
+                    msg = f"🟢 正文断言与{source_name}摘要核心观点高度吻合 ({score:.2f})。{reason}{context_str}"
         else:
             status = VerificationStatus.UNVERIFIED
             risk = RiskLevel.WARNING
