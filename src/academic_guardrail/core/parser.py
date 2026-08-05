@@ -4,6 +4,7 @@ import os
 import re
 from typing import List, Tuple
 from academic_guardrail.core.models import Citation, ContextClaim
+from academic_guardrail.core.exceptions import ParserError
 
 DOI_REGEX = re.compile(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+')
 GBT7714_HEAD_REGEX = re.compile(r'^\[(\d+)\]\s*(.+)')
@@ -154,8 +155,10 @@ class DocumentParser:
                     full_text.append(p.text.strip())
             text = "\n".join(full_text)
             return self._extract_citations_and_claims_from_text(text, location_prefix="DOCX")
-        except Exception:
+        except ImportError:
             return self._parse_text_file(file_path)
+        except Exception as e:
+            raise ParserError(f"Failed to parse DOCX file {file_path}: {e}") from e
 
     def _parse_pdf_file(self, file_path: str) -> List[Tuple[Citation, ContextClaim]]:
         full_text = []
@@ -168,8 +171,10 @@ class DocumentParser:
                         full_text.append(f"--- Page {idx+1} ---\n" + p_text)
             text = "\n".join(full_text)
             return self._extract_citations_and_claims_from_text(text, location_prefix="PDF")
-        except Exception:
+        except ImportError:
             return self._parse_text_file(file_path)
+        except Exception as e:
+            raise ParserError(f"Failed to parse PDF file {file_path}: {e}") from e
 
     def _parse_latex_bib_file(self, file_path: str) -> List[Tuple[Citation, ContextClaim]]:
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:

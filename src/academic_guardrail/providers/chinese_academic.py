@@ -8,6 +8,7 @@ import difflib
 from typing import Optional, Dict, Any
 from academic_guardrail.providers.openalex import OpenAlexProvider
 from academic_guardrail.providers.crossref import CrossrefProvider
+from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
 KNOWN_RETRACTED_DOIS = {
     "10.1016/j.cell.2006.02.001",

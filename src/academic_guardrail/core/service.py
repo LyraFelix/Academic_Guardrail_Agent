@@ -7,6 +7,9 @@ from academic_guardrail.core.ref_store import LocalRefStore
 from academic_guardrail.core.models import (
     Citation, ContextClaim, VerificationResult, VerificationStatus, RiskLevel, DocumentAuditReport
 )
+from academic_guardrail.core.exceptions import (
+    AcademicGuardrailError, ParserError, ProviderError, RateLimitError, VerificationError
+)
 from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
 
@@ -40,6 +43,22 @@ class AuditService:
                 status=VerificationStatus.UNVERIFIED,
                 risk_level=RiskLevel.WARNING,
                 message="🟡 请求超时：数据库查证已超过 15 秒限制"
+            )
+        except RateLimitError as e:
+            return VerificationResult(
+                citation=cit,
+                claim=claim,
+                status=VerificationStatus.UNVERIFIED,
+                risk_level=RiskLevel.WARNING,
+                message=f"🟡 触发 API 速率限制: {e}"
+            )
+        except ProviderError as e:
+            return VerificationResult(
+                citation=cit,
+                claim=claim,
+                status=VerificationStatus.UNVERIFIED,
+                risk_level=RiskLevel.WARNING,
+                message=f"🟡 线上数据库检索失败: {e}"
             )
 
         if verify_res.get("is_retracted"):

@@ -4,6 +4,7 @@ import re
 import urllib.parse
 import httpx
 from typing import Optional, Dict, Any
+from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
 
 class OpenAlexProvider:
@@ -35,8 +36,14 @@ class OpenAlexProvider:
                         results = data_ax.get("results", [])
                         if results:
                             return self._process_work(results[0])
-            except Exception:
-                pass
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    raise RateLimitError("OpenAlex API rate limit exceeded (HTTP 429)") from e
+                raise ProviderError(f"OpenAlex HTTP error: {e}") from e
+            except httpx.RequestError as e:
+                raise ProviderError(f"OpenAlex network error: {e}") from e
+            except Exception as e:
+                raise ProviderError(f"OpenAlex unexpected error: {e}") from e
         return None
 
     async def search_by_title(self, title: str) -> Optional[Dict[str, Any]]:
@@ -50,8 +57,14 @@ class OpenAlexProvider:
                     results = data.get("results", [])
                     if results:
                         return self._process_work(results[0])
-            except Exception:
-                pass
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    raise RateLimitError("OpenAlex API rate limit exceeded (HTTP 429)") from e
+                raise ProviderError(f"OpenAlex HTTP error: {e}") from e
+            except httpx.RequestError as e:
+                raise ProviderError(f"OpenAlex network error: {e}") from e
+            except Exception as e:
+                raise ProviderError(f"OpenAlex unexpected error: {e}") from e
         return None
 
     def _process_work(self, work: Dict[str, Any]) -> Dict[str, Any]:

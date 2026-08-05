@@ -1,8 +1,7 @@
-"""Crossref API Provider with URL quote escaping."""
-
 import urllib.parse
 import httpx
 from typing import Optional, Dict, Any
+from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
 
 class CrossrefProvider:
@@ -40,6 +39,12 @@ class CrossrefProvider:
                         "is_retracted": is_retracted,
                         "type": data.get("type")
                     }
-            except Exception:
-                pass
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    raise RateLimitError("Crossref API rate limit exceeded (HTTP 429)") from e
+                raise ProviderError(f"Crossref HTTP error: {e}") from e
+            except httpx.RequestError as e:
+                raise ProviderError(f"Crossref network error: {e}") from e
+            except Exception as e:
+                raise ProviderError(f"Crossref unexpected error: {e}") from e
         return None
