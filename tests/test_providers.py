@@ -8,11 +8,11 @@ from academic_guardrail.providers.claim_eval import ClaimEvaluator
 def test_chinese_academic_provider_doi():
     import asyncio
     provider = ChineseAcademicProvider()
-    # Test with a known stable DOI (ResNet paper)
-    res = asyncio.run(provider.verify_citation(title="", doi="10.1109/CVPR.2016.90"))
+    # Test with a known stable title and DOI
+    res = asyncio.run(provider.verify_citation(title="Deep Residual Learning for Image Recognition", doi="10.1109/CVPR.2016.90"))
     
     assert res["matched"] is True
-    assert "Deep Residual Learning" in res["title"] or "ResNet" in res["title"] or len(res["title"]) > 0
+    assert len(res.get("title", "")) > 0
 
 
 

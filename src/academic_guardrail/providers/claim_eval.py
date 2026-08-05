@@ -105,7 +105,122 @@ class ClaimEvaluator:
 
         best_sentence, sent_score = self.find_best_matching_sentence(claim, abstract)
 
-        # 1. Check for explicit polarity contradiction / antonyms
+class NegationScopeDetector:
+    """Detects negation scope (e.g., 'does not significantly increase', 'failed to markedly lower', '未显着提升')."""
+
+    NEGATION_MARKERS = {
+        "not", "no", "never", "cannot", "can't", "fail", "failed", "fails", "failing",
+        "without", "neither", "nor", "lack", "lacks", "lacking", "lacked",
+        "未", "不", "没有", "未曾", "无法", "未能", "毫无"
+    }
+
+    POS_VERBS = {
+        "increase", "increases", "increased", "increasing",
+        "promote", "promotes", "promoted", "promoting",
+        "elevate", "elevates", "elevated", "elevating",
+        "accelerate", "accelerates", "accelerated", "accelerating",
+        "提升", "提升了", "增加", "增加了", "促进", "促进了", "加速", "加速了"
+    }
+
+    NEG_VERBS = {
+        "reduce", "reduces", "reduced", "reducing",
+        "lower", "lowers", "lowered", "lowering",
+        "inhibit", "inhibits", "inhibited", "inhibiting",
+        "decrease", "decreases", "decreased", "decreasing",
+        "prevent", "prevents", "prevented", "preventing",
+        "slow down", "slows down", "slowed down",
+        "抑制", "抑制了", "降低", "降低了", "减少", "减少了", "阻碍", "阻碍了"
+    }
+
+    @classmethod
+    def get_text_polarity_profile(cls, text: str) -> Dict[str, bool]:
+        """Parses text and returns polarity flags considering negation scopes in EN and ZH."""
+        t = text.lower()
+        has_pos_polarity = False
+        has_neg_polarity = False
+
+        # 1. Chinese character prefix window scanning (10 chars before verb)
+        cn_neg_markers = ["未", "不", "没有", "未曾", "无法", "未能", "毫无"]
+        cn_pos_verbs = ["提升", "增加", "促进", "加速"]
+        cn_neg_verbs = ["降低", "减少", "抑制", "阻碍"]
+
+        for v in cn_pos_verbs:
+            if v in t:
+                v_idx = t.find(v)
+                prefix = t[max(0, v_idx - 10):v_idx]
+                if any(m in prefix for m in cn_neg_markers):
+                    has_neg_polarity = True
+                else:
+                    has_pos_polarity = True
+
+        for v in cn_neg_verbs:
+            if v in t:
+                v_idx = t.find(v)
+                prefix = t[max(0, v_idx - 10):v_idx]
+                if any(m in prefix for m in cn_neg_markers):
+                    has_pos_polarity = True
+                else:
+                    has_neg_polarity = True
+
+        # 2. English token lookback window (1-4 tokens before verb)
+        words = re.findall(r'\b[a-zA-Z]+\b', t)
+        for idx, word in enumerate(words):
+            if word in cls.POS_VERBS:
+                lookback = words[max(0, idx - 4):idx]
+                if any(m in lookback for m in cls.NEGATION_MARKERS):
+                    has_neg_polarity = True
+                else:
+                    has_pos_polarity = True
+            elif word in cls.NEG_VERBS:
+                lookback = words[max(0, idx - 4):idx]
+                if any(m in lookback for m in cls.NEGATION_MARKERS):
+                    has_pos_polarity = True
+                else:
+                    has_neg_polarity = True
+
+        return {"has_pos": has_pos_polarity, "has_neg": has_neg_polarity}
+
+
+class ClaimEvaluator:
+    """Evaluates alignment, detects polarity contradictions, and extracts sentence-level context matches across languages."""
+
+    def find_best_matching_sentence(self, claim: str, abstract: str) -> Tuple[str, float]:
+        if not claim or not abstract:
+            return "", 0.0
+
+        sentences = [s.strip() for s in re.split(r'[\.\?\!\;\n]\s*', abstract) if len(s.strip()) > 10]
+        if not sentences:
+            return abstract[:150], 0.40
+
+        best_sent = sentences[0]
+        best_score = 0.0
+
+        for sent in sentences:
+            sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, sent)
+            if sim > best_score:
+                best_score = sim
+                best_sent = sent
+
+        return best_sent, round(best_score, 2)
+
+    def evaluate_alignment(self, claim: str, abstract: str) -> Tuple[float, str, str]:
+        """Returns (score, reason, best_matching_abstract_sentence)."""
+        if not claim or not abstract:
+            return 0.0, "Missing claim or abstract", ""
+
+        c_text = claim.lower().strip()
+        a_text = abstract.lower().strip()
+
+        best_sentence, sent_score = self.find_best_matching_sentence(claim, abstract)
+
+        # 1. Scope-Aware Negation & Polarity Contradiction Detection
+        c_profile = NegationScopeDetector.get_text_polarity_profile(claim)
+        a_profile = NegationScopeDetector.get_text_polarity_profile(abstract)
+
+        # Fallback to static OPPOSITE_PAIRS check if profile is indecisive
+        if (c_profile["has_pos"] and a_profile["has_neg"]) or (c_profile["has_neg"] and a_profile["has_pos"]):
+            return 0.15, "Polarity mismatch: Scope-aware negation indicates claim directly contradicts abstract conclusion", best_sentence
+
         for pos_set, neg_set in OPPOSITE_PAIRS:
             c_has_neg = any(w in c_text for w in neg_set)
             c_has_pos = any(w in c_text for w in pos_set) and not c_has_neg

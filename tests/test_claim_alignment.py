@@ -82,6 +82,30 @@ class TestClaimEvaluator:
         assert "Polarity mismatch" in reason
         assert score <= 0.20
 
+    def test_negation_scope_does_not_significantly_increase(self, evaluator):
+        """Adverbial inserted negation 'does not significantly increase' should be recognized as negative polarity."""
+        score, reason, _ = evaluator.evaluate_alignment(
+            "The proposed method significantly increases classification accuracy.",
+            "Experimental results demonstrate that the method does not significantly increase accuracy."
+        )
+        assert "Polarity mismatch" in reason
+
+    def test_negation_scope_failed_to_markedly_lower(self, evaluator):
+        """Scope-aware negation 'failed to markedly lower' should invert lower (negative) into positive retention."""
+        score, reason, _ = evaluator.evaluate_alignment(
+            "Treatment significantly lowers serum cholesterol levels.",
+            "Clinical trials showed that the treatment failed to markedly lower serum cholesterol."
+        )
+        assert "Polarity mismatch" in reason
+
+    def test_negation_scope_chinese_adverb(self, evaluator):
+        """Chinese negation scope '未显著提升' should be recognized as negative polarity."""
+        score, reason, _ = evaluator.evaluate_alignment(
+            "该方案显著提升了企业生产效率",
+            "实证分析表明，该方案未显著提升企业生产效率"
+        )
+        assert "Polarity mismatch" in reason
+
     def test_contradicts_reduce_vs_did_not_lower(self, evaluator):
         score, reason, _ = evaluator.evaluate_alignment(
             "Vitamin D supplementation reduces total cardiovascular events.",
