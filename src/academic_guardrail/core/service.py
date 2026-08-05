@@ -17,7 +17,6 @@ class AuditService:
     def __init__(self, max_concurrency: int = 10, request_timeout: float = 15.0):
         self.max_concurrency = max_concurrency
         self.request_timeout = request_timeout
-        self.semaphore = asyncio.Semaphore(max_concurrency)
         self.parser = DocumentParser()
         self.provider = ChineseAcademicProvider()
         self.evaluator = ClaimEvaluator()
@@ -111,8 +110,10 @@ class AuditService:
                 results=[]
             )
 
+        semaphore = asyncio.Semaphore(self.max_concurrency)
+
         async def _bounded_verify(cit, claim):
-            async with self.semaphore:
+            async with semaphore:
                 return await self.verify_single_item(cit, claim, ref_store)
 
         results = await asyncio.gather(*[_bounded_verify(cit, claim) for cit, claim in pairs])
