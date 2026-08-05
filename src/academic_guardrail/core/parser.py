@@ -13,6 +13,10 @@ class DocumentParser:
     """Parses various document formats into structured Citations and ContextClaims."""
 
     def parse_document(self, file_path: str) -> List[Tuple[Citation, ContextClaim]]:
+        # Handle arXiv URL or arXiv ID directly
+        if file_path.startswith("http://") or file_path.startswith("https://") or "arxiv.org" in file_path or re.match(r'^\d{4}\.\d{4,5}(v\d+)?$', file_path):
+            return self._parse_arxiv_target(file_path)
+
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -27,6 +31,27 @@ class DocumentParser:
             return self._parse_latex_bib_file(file_path)
         else:
             return self._parse_text_file(file_path)
+
+    def _parse_arxiv_target(self, target: str) -> List[Tuple[Citation, ContextClaim]]:
+        arxiv_match = re.search(r'(\d{4}\.\d{4,5})', target)
+        arxiv_id = arxiv_match.group(1) if arxiv_match else target
+        doi = f"10.48550/arxiv.{arxiv_id}"
+        
+        citation = Citation(
+            id="cit_arxiv_1",
+            raw_text=f"arXiv:{arxiv_id}",
+            doi=doi,
+            title=f"arXiv Preprint {arxiv_id}",
+            authors=[],
+            year=None,
+            location_info=f"arXiv Target: {target}"
+        )
+        claim = ContextClaim(
+            claim_sentence=f"arXiv paper {arxiv_id}",
+            citation_id="cit_arxiv_1",
+            location_info=f"arXiv Target: {target}"
+        )
+        return [(citation, claim)]
 
     def _extract_citations_and_claims_from_text(self, text: str, location_prefix: str = "") -> List[Tuple[Citation, ContextClaim]]:
         pairs: List[Tuple[Citation, ContextClaim]] = []
