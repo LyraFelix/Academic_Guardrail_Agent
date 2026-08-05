@@ -13,6 +13,7 @@ class TestAuditService:
         return AuditService(max_concurrency=5, request_timeout=10.0)
 
     def test_audit_service_initialization(self, service):
+        assert service.max_concurrency == 5
         assert service.semaphore._value == 5
         assert service.request_timeout == 10.0
 

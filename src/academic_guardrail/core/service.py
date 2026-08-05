@@ -15,11 +15,12 @@ class AuditService:
     """Core Service Layer for Academic Guardrail Agent."""
 
     def __init__(self, max_concurrency: int = 10, request_timeout: float = 15.0):
+        self.max_concurrency = max_concurrency
+        self.request_timeout = request_timeout
+        self.semaphore = asyncio.Semaphore(max_concurrency)
         self.parser = DocumentParser()
         self.provider = ChineseAcademicProvider()
         self.evaluator = ClaimEvaluator()
-        self.semaphore = asyncio.Semaphore(max_concurrency)
-        self.request_timeout = request_timeout
 
     async def verify_single_item(
         self,
