@@ -21,6 +21,7 @@ def test_claim_evaluator():
     claim = "深度残差网络能够解决深层神经网络的梯度消失与退化问题"
     abstract = "Deep residual networks make it easier to train substantially deeper networks and address degradation problems."
     
-    score, reason = evaluator.evaluate_alignment(claim, abstract)
+    score, reason, best_sentence = evaluator.evaluate_alignment(claim, abstract)
     assert 0.0 <= score <= 1.0
     assert len(reason) > 0
+    assert len(best_sentence) > 0
