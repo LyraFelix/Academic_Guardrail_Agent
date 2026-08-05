@@ -161,9 +161,7 @@ We evaluated `Academic Guardrail` against standard lexical baseline methods on t
 | **SequenceMatcher (Ratio)** | 0.59 | 0.00 | 1.35 ms | 0 MB / Pure CPU |
 | **Academic Guardrail (Ours)** | **0.75** | **1.00** | **5.44 ms** | **0 MB / Pure CPU** |
 
-> **💡 Design Rationale**:
-> Lexical methods (TF-IDF, BM25) cannot detect polarity inversions (e.g., `increases` vs `inhibits`), yielding an F1 of 0.0 on `CONTRADICTS`.
-> Why use a zero-shot algorithm over heavy LLM/NLI models (BGE-M3, DeBERTa-NLI, Llama-3)? Heavy models require 2GB–8GB GPU VRAM and 50–500ms latency, which violates our core goal of a **zero-dependency, instant, CPU-only local CLI & MCP tool**.
+> Why use a lightweight `Zero-Shot Multilingual Claim Alignment` heuristic algorithm over heavy pretrained NLI models (BGE-M3, DeBERTa-v3-NLI, Llama-3)? Neural NLI models require 2GB–8GB GPU VRAM and 50–500ms latency, which violates our core goal of a **zero-dependency, instant, CPU-only local CLI & MCP tool**.
 
 Run the full baseline comparison script from the project root:
 ```bash

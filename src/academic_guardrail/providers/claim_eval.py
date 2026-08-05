@@ -1,4 +1,4 @@
-"""Claim Evaluator with Antonym & Polarity Inversion Logic and Universal Zero-Shot Multilingual NLI Alignment."""
+"""Claim Evaluator with Antonym & Polarity Inversion Logic and Universal Zero-Shot Multilingual Claim Alignment."""
 
 import re
 import difflib
