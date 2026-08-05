@@ -8,7 +8,7 @@ from academic_guardrail.providers.chinese_academic import ChineseAcademicProvide
 def test_retracted_doi_detection():
     """Retraction Watch offline index should flag known retracted papers."""
     provider = ChineseAcademicProvider()
-    res = asyncio.run(provider.verify_citation(title="", doi="10.1016/S0140-6736(97)11096-0"))
+    res = asyncio.run(provider.verify_citation(title="", doi="10.1016/j.cell.2006.02.001"))
     assert res["matched"] is True
     assert res["is_retracted"] is True
 

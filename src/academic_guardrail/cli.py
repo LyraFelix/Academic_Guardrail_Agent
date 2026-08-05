@@ -18,20 +18,17 @@ if sys.platform == "win32":
 
 console = Console(force_terminal=True)
 
-from academic_guardrail.core.parser import DocumentParser
-from academic_guardrail.core.reporter import ReportGenerator
-from academic_guardrail.core.models import (
-    VerificationResult, VerificationStatus, RiskLevel, DocumentAuditReport
-)
-from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
-from academic_guardrail.providers.claim_eval import ClaimEvaluator
-
-
-from academic_guardrail.core.ref_store import LocalRefStore
 from typing import Optional
-
-
+from academic_guardrail.core.reporter import ReportGenerator
+from academic_guardrail.core.models import RiskLevel
 from academic_guardrail.core.service import AuditService
+
+
+@click.group()
+def main():
+    """🛡️ Academic Guardrail Agent CLI Tool"""
+    pass
+
 
 @main.command()
 @click.argument('file_path', type=click.Path(exists=True))
@@ -41,10 +38,6 @@ from academic_guardrail.core.service import AuditService
 def audit(file_path: str, output: str, refs_dir: Optional[str], open_browser: bool):
     """审计指定原稿 (.pdf, .docx, .md, .tex) 中的文献引用与断言."""
     console.print(f"[bold blue]🛡️ 开始审计原稿:[/bold blue] {file_path}")
-    
-    ref_store = LocalRefStore(refs_dir) if refs_dir else None
-    if ref_store and ref_store.papers:
-        console.print(f"[bold green]📚 已成功加载本地参考文献原文库:[/bold green] 找到 {len(ref_store.papers)} 篇参考文件")
 
     async def _run_audit():
         service = AuditService()

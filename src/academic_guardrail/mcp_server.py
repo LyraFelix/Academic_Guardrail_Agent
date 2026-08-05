@@ -2,14 +2,6 @@
 
 import asyncio
 from mcp.server.fastmcp import FastMCP
-
-from academic_guardrail.core.models import (
-    Citation, ContextClaim, VerificationResult, VerificationStatus, RiskLevel, DocumentAuditReport
-)
-from academic_guardrail.core.parser import DocumentParser
-from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
-from academic_guardrail.providers.claim_eval import ClaimEvaluator
-
 from academic_guardrail.core.service import AuditService
 
 mcp = FastMCP("Academic Guardrail Agent")
