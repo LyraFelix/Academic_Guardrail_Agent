@@ -21,9 +21,13 @@
 ## 🖼️ Demo Preview
 
 ### 1. Browser UI Report Preview
-Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment (highlighted quotes in report cards represent **the exact matching sentence extracted directly from the reference abstract or local PDF**):
+Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment:
 
-![HTML Report Preview](docs/assets/report_preview.png)
+#### View 1: Card Details View
+![HTML Report Cards View](docs/assets/report_cards_preview.png)
+
+#### View 2: Summary Table View
+![HTML Report Table View](docs/assets/report_table_preview.png)
 
 ### 2. Interactive CLI Audit (`--open` / `-b`)
 Run the audit command in your terminal to inspect claims and citations across public APIs and local reference files:

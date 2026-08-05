@@ -21,9 +21,13 @@
 ## 🖼️ 运行效果预览 (Demo Preview)
 
 ### 1. HTML 审查报告效果 (Browser UI Preview)
-调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告（呈现在报告卡片中的高亮文本为**从被引文献摘要或全篇 PDF 原文中切分提取出的吻合单句**）：
+调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告：
 
-![HTML 审计报告效果预览](docs/assets/report_preview.png)
+#### 视图一：引用审计与内容一致性卡片明细 (Card Details View)
+![HTML 审计报告卡片明细视图](docs/assets/report_cards_preview.png)
+
+#### 视图二：全量文献核查汇总表格 (Summary Table View)
+![HTML 审计报告汇总表格视图](docs/assets/report_table_preview.png)
 
 ### 2. 终端 CLI 交互式审计 (`--open` / `-b`)
 在终端执行审计命令后，系统自动分析原稿引用与断言，并在控制台实时输出分级风险明细：
