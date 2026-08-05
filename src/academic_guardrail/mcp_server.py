@@ -10,10 +10,11 @@ from academic_guardrail.core.parser import DocumentParser
 from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
 
+from academic_guardrail.core.service import AuditService
+
 mcp = FastMCP("Academic Guardrail Agent")
-provider = ChineseAcademicProvider()
-evaluator = ClaimEvaluator()
-parser = DocumentParser()
+service = AuditService()
+provider = service.provider
 
 
 @mcp.tool()
@@ -49,64 +50,22 @@ async def check_paper_retraction(doi: str) -> str:
 async def audit_document_claims(file_path: str) -> str:
     """全面审计论文原稿（.pdf, .docx, .md, .tex），检查引用真实性与断言一致性。"""
     try:
-        pairs = parser.parse_document(file_path)
+        report = await service.audit_document(file_path)
     except Exception as e:
         return f"❌ 无法解析文档: {str(e)}"
 
-    if not pairs:
+    if report.total_citations == 0:
         return "ℹ️ 未在文档中识别出任何文献引用标记或 GB/T 7714 格式。"
 
-    results = []
-    passed = 0
-    warning = 0
-    danger = 0
+    output_lines = [
+        f"📊 学术引用与断言审计总结报告: {report.document_path}",
+        f"总引用数: {report.total_citations} | 🟢 正常: {report.passed_count} | 🟡 警告: {report.warning_count} | 🔴 撤稿高危: {report.danger_count}\n"
+    ]
 
-    for cit, claim in pairs:
-        verify_res = await provider.verify_citation(title=cit.title or cit.raw_text, doi=cit.doi)
-        
-        if verify_res.get("is_retracted"):
-            status = VerificationStatus.RETRACTED
-            risk = RiskLevel.DANGER
-            msg = "🔴 论文存在撤稿记录，存在严重学术合规风险！"
-            danger += 1
-        elif verify_res.get("matched"):
-            score, reason = evaluator.evaluate_alignment(claim.claim_sentence, verify_res.get("abstract", ""))
-            if score < 0.40:
-                status = VerificationStatus.CLAIM_MISMATCH
-                risk = RiskLevel.NOTICE
-                msg = f"🔵 断言一致性较弱 ({score})。{reason}"
-                passed += 1
-            else:
-                status = VerificationStatus.VALID
-                risk = RiskLevel.PASS
-                msg = f"🟢 匹配成功，文献正常 ({verify_res.get('source')})。"
-                passed += 1
-        else:
-            status = VerificationStatus.UNVERIFIED
-            risk = RiskLevel.WARNING
-            msg = "🟡 数据库未查证到该文献，请确认格式或手写准确性。"
-            warning += 1
+    for item in report.results:
+        output_lines.append(f"• [{item.citation.id}] {item.citation.raw_text[:50]}... => {item.message}")
 
-        v_item = VerificationResult(
-            citation=cit,
-            claim=claim,
-            status=status,
-            risk_level=risk,
-            verified_title=verify_res.get("title"),
-            verified_doi=verify_res.get("doi"),
-            abstract_tldr=verify_res.get("abstract"),
-            message=msg
-        )
-        results.append(v_item)
-
-    report = DocumentAuditReport(
-        document_path=file_path,
-        total_citations=len(pairs),
-        passed_count=passed,
-        warning_count=warning,
-        danger_count=danger,
-        results=results
-    )
+    return "\n".join(output_lines)
 
     summary = f"🛡️ **文档审计完成**: 总引用 {report.total_citations} 项 | 🟢 通过 {report.passed_count} | 🟡 警告 {report.warning_count} | 🔴 高危 {report.danger_count}\n"
     for r in report.results:
