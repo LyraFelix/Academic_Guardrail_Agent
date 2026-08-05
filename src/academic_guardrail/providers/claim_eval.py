@@ -5,11 +5,11 @@ import difflib
 from typing import Tuple, Dict, Any, Optional
 
 OPPOSITE_PAIRS = [
-    ({"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "提升", "增加", "促进", "加速"},
-     {"inhibit", "inhibits", "inhibited", "decrease", "decreases", "decreased", "reduce", "reduces", "reduced", "prevent", "prevents", "slow down", "did not lower", "did not reduce", "not increase", "no effect", "抑制", "降低", "减少", "阻碍"}),
+    ({"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "accelerated", "提升", "增加", "促进", "加速"},
+     {"inhibit", "inhibits", "inhibited", "decrease", "decreases", "decreased", "reduce", "reduces", "reduced", "prevent", "prevents", "slow down", "slows down", "slowed down", "did not lower", "did not reduce", "not increase", "no effect", "抑制", "降低", "减少", "阻碍"}),
 
     ({"reduce", "reduces", "reduced", "reducing", "lower", "lowers", "lowered", "prevent", "prevents", "inhibit", "inhibited", "降低", "减少", "抑制"},
-     {"did not lower", "did not reduce", "failed to lower", "failed to reduce", "elevate", "elevates", "elevated", "increase", "increases", "increased", "accelerate", "未降低", "未减少", "提升", "增加"})
+     {"did not lower", "did not reduce", "failed to lower", "failed to reduce", "elevate", "elevates", "elevated", "increase", "increases", "increased", "accelerate", "accelerates", "accelerated", "未降低", "未减少", "提升", "增加"})
 ]
 
 

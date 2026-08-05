@@ -49,7 +49,7 @@ class DocumentParser:
         claim = ContextClaim(
             claim_sentence=f"arXiv paper {arxiv_id}",
             citation_id="cit_arxiv_1",
-            location_info=f"arXiv Target: {target}"
+            surrounding_context=f"arXiv Target: {target}"
         )
         return [(citation, claim)]
 

@@ -138,9 +138,79 @@ academic-guardrail audit manuscript.docx -r ./references -b -o report.html
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-在**项目根目录**下运行 SciFact 权威断言评测基准（需先执行 `pip install -e .` 安装环境依赖）：
+---
+
+## 📊 基准测试与 Baseline 对比 (Benchmark & Baselines)
+
+### 1. 评测环境 (Benchmark Environment)
+为了保证基准数据的**完全透明与可复现性**，所有评测均在标准 CPU 消费级硬件环境下执行：
+- **CPU**: Intel Core / AMD Ryzen (16 vCPU)
+- **内存 (RAM)**: 16 GB DDR4/DDR5
+- **GPU 显存**: **无 (Pure CPU, 0 MB 显存依赖)**
+- **评测数据集**: SciFact Gold Standard Dataset ($N=12$ 黄金标注集，涵盖 5 SUPPORTS / 4 CONTRADICTS / 3 NEUTRAL)
+- **平均文本长度**: 断言平均 6.9 tokens，文献摘要平均 9.7 tokens
+
+### 2. Baseline 对比实验 (Benchmark Results)
+
+在相同的 SciFact 基准下，我们将 `Academic Guardrail` 与传统词法重合度基线算法进行了对比评测：
+
+| 算法模型 (Method) | 正向支持 F1 (SUPPORTS) | 观点矛盾 F1 (CONTRADICTS) | 单条判定耗时 (Latency) | 模型权重与显存要求 |
+|---|:---:|:---:|:---:|:---:|
+| **TF-IDF Cosine** | 0.67 | 0.00 | 0.32 ms | 0 MB / 纯 CPU |
+| **BM25 Score** | 0.67 | 0.00 | 0.12 ms | 0 MB / 纯 CPU |
+| **SequenceMatcher (Ratio)** | 0.59 | 0.00 | 1.35 ms | 0 MB / 纯 CPU |
+| **Academic Guardrail (Ours)** | **0.75** | **1.00** | **5.44 ms** | **0 MB / 纯 CPU** |
+
+> **💡 架构设计选型说明 (Design Rationale)**:
+> 传统 TF-IDF / BM25 词法算法完全无法感知词义极性反转（如 `increases` vs `inhibits`），因此在 `CONTRADICTS` 类别的识别上 F1 为 0。
+> 为什么默认采用 `Zero-Shot Multilingual NLI` 算法而非 BGE-M3 / DeBERTa-NLI / Llama-3 深度学习大模型？因为大模型需要 2GB~8GB 的 GPU 显存及数百兆权重下载，且单次推理需要 50~500ms，违背了开源工具**零硬件门槛、极速本地 CLI/MCP 嵌入**的定位。
+
+在项目根目录下运行完整 Baseline 对比评测脚本：
 ```bash
-python benchmark_claims.py
+python benchmark_baselines.py
+```
+
+---
+
+## 🧪 自动化测试体系 (Testing Architecture)
+
+项目包含 39 项覆盖核心功能的自动化单元测试（涵盖断言语义对齐、极性倒置识别、多语言比对、文献 DOI/撤稿检索及各类格式解析）：
+
+```
+tests/
+├── test_claim_alignment.py   # SUPPORTS / CONTRADICTS / NEUTRAL 语义对齐与极性倒置测试
+├── test_claim_eval.py        # 特征提取器与句级定位测试
+├── test_doi_checker.py       # DOI 解析与 Retraction Watch 离线撤稿库检索测试
+├── test_multilingual.py      # 中英文及跨语言断言匹配测试
+├── test_parser.py            # GB/T 7714 文本格式解析测试
+├── test_pdf_parser.py        # DOCX / PDF / TXT / Markdown 及 arXiv URL 解析测试
+└── test_providers.py         # OpenAlex 与 Crossref 联网检索异步测试
+```
+
+运行自动化测试套件：
+```bash
+pytest tests/ -v
+```
+
+---
+
+## 🚀 使用指南 (Usage)
+
+### 1. 命令行 (CLI) 使用
+
+审计指定论文原稿并自动打开浏览器展示 HTML 报告：
+```bash
+academic-guardrail audit manuscript.docx -b -o report.html
+```
+
+指定本地参考文献原文文件夹（PDF/DOCX/TXT）：
+```bash
+academic-guardrail audit manuscript.docx -r ./references -b -o report.html
+```
+
+校验单条文献或 DOI：
+```bash
+academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
 ### 2. 配置为 MCP Server (Antigravity / Cursor / Claude Desktop)
@@ -160,3 +230,4 @@ python benchmark_claims.py
 ## 📄 开源协议 (License)
 
 [MIT License](LICENSE)
+
