@@ -112,9 +112,25 @@ def audit(file_path: str, output: str, refs_dir: Optional[str], open_browser: bo
             console.print("[yellow]ℹ️ 未能在文件中找到文献引用标记或 GB/T 7714 格式。[/yellow]")
             return
 
-        console.print(f"[green]已提取到 {len(pairs)} 条文献引用与断言上下文，正在并发联网比对数据库...[/green]\n")
+        sem = asyncio.Semaphore(10)
 
-        tasks = [_verify_single(cit, claim, provider, evaluator) for cit, claim in pairs]
+        async def _bounded_verify(cit, claim):
+            async with sem:
+                try:
+                    return await asyncio.wait_for(
+                        _verify_single(cit, claim, provider, evaluator),
+                        timeout=15.0
+                    )
+                except asyncio.TimeoutError:
+                    return VerificationResult(
+                        citation=cit,
+                        claim=claim,
+                        status=VerificationStatus.UNVERIFIED,
+                        risk_level=RiskLevel.WARNING,
+                        message="🟡 请求超时：数据库查证已超过 15 秒限制"
+                    )
+
+        tasks = [_bounded_verify(cit, claim) for cit, claim in pairs]
         results = await asyncio.gather(*tasks)
 
         passed = sum(1 for r in results if r.risk_level in [RiskLevel.PASS, RiskLevel.NOTICE])
