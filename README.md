@@ -133,7 +133,7 @@ Verify a single DOI or citation:
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-Run the SciFact NLI Claim Alignment Benchmark (from the **project root directory**):
+Run the SciFact NLI Claim Alignment Benchmark (from the **project root directory**, after running `pip install -e .`):
 ```bash
 python benchmark_claims.py
 ```

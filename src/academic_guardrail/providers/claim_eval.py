@@ -5,11 +5,11 @@ import difflib
 from typing import Tuple, Dict, Any, Optional
 
 OPPOSITE_PAIRS = [
-    ({"increase", "increases", "increasing", "promote", "promotes", "elevate", "elevates", "accelerate", "accelerates", "提升", "增加", "促进", "加速"},
-     {"inhibit", "inhibits", "decrease", "decreases", "reduce", "reduces", "prevent", "prevents", "slow down", "did not lower", "did not reduce", "not increase", "no effect", "抑制", "降低", "减少", "阻碍"}),
+    ({"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "提升", "增加", "促进", "加速"},
+     {"inhibit", "inhibits", "inhibited", "decrease", "decreases", "decreased", "reduce", "reduces", "reduced", "prevent", "prevents", "slow down", "did not lower", "did not reduce", "not increase", "no effect", "抑制", "降低", "减少", "阻碍"}),
 
-    ({"reduce", "reduces", "reducing", "lower", "lowers", "prevent", "prevents", "降低", "减少", "抑制"},
-     {"did not lower", "did not reduce", "elevate", "elevates", "increase", "increases", "accelerate", "未降低", "未减少", "提升", "增加"})
+    ({"reduce", "reduces", "reduced", "reducing", "lower", "lowers", "lowered", "prevent", "prevents", "inhibit", "inhibited", "降低", "减少", "抑制"},
+     {"did not lower", "did not reduce", "failed to lower", "failed to reduce", "elevate", "elevates", "elevated", "increase", "increases", "increased", "accelerate", "未降低", "未减少", "提升", "增加"})
 ]
 
 
@@ -107,11 +107,11 @@ class ClaimEvaluator:
 
         # 1. Check for explicit polarity contradiction / antonyms
         for pos_set, neg_set in OPPOSITE_PAIRS:
-            c_has_pos = any(w in c_text for w in pos_set)
-            a_has_neg = any(re.search(r'\b' + re.escape(w) + r'\b', a_text) for w in neg_set)
-
             c_has_neg = any(w in c_text for w in neg_set)
-            a_has_pos = any(re.search(r'\b' + re.escape(w) + r'\b', a_text) for w in pos_set)
+            c_has_pos = any(w in c_text for w in pos_set) and not c_has_neg
+
+            a_has_neg = any(re.search(r'\b' + re.escape(w) + r'\b', a_text) for w in neg_set)
+            a_has_pos = any(re.search(r'\b' + re.escape(w) + r'\b', a_text) for w in pos_set) and not a_has_neg
 
             if (c_has_pos and a_has_neg) or (c_has_neg and a_has_pos):
                 return 0.15, "Polarity mismatch: Claim directly contradicts abstract conclusion", best_sentence

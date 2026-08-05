@@ -133,7 +133,7 @@ academic-guardrail audit manuscript.docx -r ./references -b -o report.html
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-在**项目根目录**下运行 SciFact 权威断言评测基准：
+在**项目根目录**下运行 SciFact 权威断言评测基准（需先执行 `pip install -e .` 安装环境依赖）：
 ```bash
 python benchmark_claims.py
 ```
