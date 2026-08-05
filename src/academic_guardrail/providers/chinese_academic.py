@@ -122,7 +122,8 @@ class ChineseAcademicProvider:
                     
                     is_retracted = (clean_doi in KNOWN_RETRACTED_DOIS) or \
                                    (openalex_res.get("is_retracted") if openalex_res else False) or \
-                                   (crossref_res.get("is_retracted") if crossref_res else False)
+                                   (crossref_res.get("is_retracted") if crossref_res else False) or \
+                                   any(kw in matched_title.lower() for kw in ["retracted", "retraction", "withdrawn", "撤稿"])
 
                     abstract = openalex_res.get("abstract", "") if openalex_res else ""
 

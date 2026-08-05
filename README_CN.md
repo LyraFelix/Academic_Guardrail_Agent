@@ -20,8 +20,13 @@
 
 ## 🖼️ 运行效果预览 (Demo Preview)
 
-### 1. 终端 CLI 交互式审计与自动调起浏览器 (`--open` / `-b`)
-在终端执行审计命令后，系统将自动分析原稿引用与上下文断言，生成现代卡片式 HTML 报告并自动在浏览器中打开：
+### 1. HTML 审查报告效果 (Browser UI Preview)
+调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告：
+
+![HTML 审计报告效果预览](docs/assets/report_preview.png)
+
+### 2. 终端 CLI 交互式审计 (`--open` / `-b`)
+在终端执行审计命令后，系统自动分析原稿引用与断言，并在控制台实时输出分级风险明细：
 
 ```bash
 academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
@@ -52,28 +57,35 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 
 ## 🌟 核心特性 (Key Features)
 
-1. **零样本通用多语言断言对齐算法 (`MultilingualFeatureExtractor`)**:
-   - 弃用传统的硬编码规则字典，采用 **Zero-Shot 多语言 N-Gram / 子词特征与词干规范化算子**。
-   - 完美支持跨语言（如中文正文断言 vs 英文文献 Abstract）的语义比对与极性分析。
+1. **零样本多语言断言对齐算法 (`MultilingualFeatureExtractor`)**:
+   - **零门槛跨语言处理**：本算法无需提前训练模型，也无需预置专业领域字典，能够直接跨语言比对中文正文断言与英文文献摘要的核心观点。
+   - **算法细节**：底层结合 Token 词干提取（Stemming）、学术近义词规范化与多语言 N-Gram 字符特征匹配。
    - 在 Allen AI 权威 **SciFact 科学断言数据集** 上：
      - **观点矛盾拦截 (`CONTRADICTS`)**: Precision = **1.00 (100%)**, Recall = 0.75, **F1-Score = 0.86**
      - **正向支持判定 (`SUPPORTS`)**: Precision = 0.75, **F1-Score = 0.67**
-     - **全局分类正确率**: **75.0%**
-2. **句级上下文精准定位 (`Sentence-Level Locator`)**:
-   - 不再只返回一整篇数百字的模糊摘要，而是自动将摘要切句，**精准高亮显示摘要中与正文断言最为吻合的单句原文**。
-3. **本地参考文献原文库提取 (`--refs-dir` / `-r`)**:
+2. **断言语义匹配工作原理**:
+   - 系统首先反向回溯原稿正文，提取包含引用标记的上下文断言句。
+   - 接着从公网数据库 API 或本地文献原文中提取摘要/全文段落，通过多维字符特征与反义极性树（`Polarity Antonym Graph`）检测结论倒置与观点曲解，并实时高亮定位最吻合的单句。
+3. **句级上下文精准定位 (`Sentence-Level Locator`)**:
+   - 不再只返回整篇数百字的模糊摘要，而是自动将摘要/全文切句，**精准高亮显示文献中与正文断言最吻合的单句原文**。
+4. **本地参考文献原文库提取 (`--refs-dir` / `-r`)**:
    - 支持传入用户自定义的本地参考文献文件夹（`.pdf`, `.docx`, `.txt`）。
-   - 当线上公网数据库缺少 Abstract 文本时，系统自动匹配并读取本地原文文件进行断言比对。
-4. **全自动网络代理与 API 重试保障 (`trust_env`)**:
-   - 内部 HTTP 客户端配置 `trust_env=True` 与 OpenAlex Polite Pool 请求头，自动读取系统代理，解决国内网络请求 HTTPS 超时与 429 Rate Limit 问题。
-5. **现代 Glassmorphism UI 报告**:
-   - 自动生成符合现代审美标准的 HTML 审查报告，具备卡片布局、状态 Badge、数据概览网格与高亮对齐展示。
+   - 当线上公网数据库缺少 Abstract 文本时，系统自动读取本地全篇原文（支持多页 PDF）进行句子级断言比对。
+5. **全自动网络代理与 API 重试保障 (`trust_env`)**:
+   - 内部 HTTP 客户端配置 `trust_env=True` 与 OpenAlex Polite Pool 请求头，自动读取系统代理，解决 HTTPS 超时与 429 Rate Limit 问题。
 
 ---
 
 ## 📦 安装与依赖说明 (Installation & Dependencies)
 
-### 1. 本地安装
+### 1. PyPI 快捷安装 (即将推出)
+
+```bash
+pip install academic-guardrail
+```
+> **注**：目前项目处于快速迭代期，暂需从源码安装，我们将尽快发布至 PyPI 官方索引。
+
+### 2. 源码安装
 
 ```bash
 # 1. 克隆仓库

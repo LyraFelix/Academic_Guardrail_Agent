@@ -20,8 +20,13 @@
 
 ## 🖼️ Demo Preview
 
-### Interactive CLI Audit & Auto-Browser Launch (`--open` / `-b`)
-Run the audit command in your terminal to inspect claims and citations across databases and local reference files. A modern glassmorphism HTML report is generated and auto-launched in your default browser:
+### 1. Browser UI Report Preview
+Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment:
+
+![HTML Report Preview](docs/assets/report_preview.png)
+
+### 2. Interactive CLI Audit (`--open` / `-b`)
+Run the audit command in your terminal to inspect claims and citations across public APIs and local reference files:
 
 ```bash
 academic-guardrail audit "paper.docx" -r "./references" -b -o report.html
@@ -52,26 +57,35 @@ Report output to: report.html
 
 ## 🌟 Key Features
 
-1. **Zero-Shot Universal Multilingual Claim Alignment (`MultilingualFeatureExtractor`)**:
-   - Replaces hardcoded dictionaries with a **Zero-Shot Subword N-Gram, Stemming & Synonym Normalization Operator**.
-   - Supports cross-lingual claim comparison (e.g., Chinese manuscript claim vs English abstract).
+1. **Zero-Shot Multilingual Claim Alignment (`MultilingualFeatureExtractor`)**:
+   - **Zero-Setup Cross-Lingual Matching**: Requires no pre-training or specialized domain dictionaries. Directly compares Chinese manuscript claims against English reference abstracts out of the box.
+   - **Algorithm Details**: Under the hood, combines Token Stemming, academic synonym normalization, and multilingual subword N-Gram feature matching.
    - SciFact Gold Standard Benchmark Performance:
      - **Contradiction Interception (`CONTRADICTS`)**: Precision = **1.00 (100%)**, Recall = 0.75, **F1-Score = 0.86**
      - **Support Verification (`SUPPORTS`)**: Precision = 0.75, **F1-Score = 0.67**
-     - **Overall Classification Accuracy**: **75.0%**
-2. **Sentence-Level Context Locator (`find_best_matching_sentence`)**:
-   - Automatically splits abstracts and extracts the single best-matching sentence corresponding to the user's claim.
-3. **Local Reference Paper Extractor (`--refs-dir` / `-r`)**:
+2. **Claim Entailment Mechanism**:
+   - The system extracts inline citation claims from the manuscript text.
+   - Fetches abstract or full-text paragraphs from public APIs or local reference files, detects polarity contradictions via a `Polarity Antonym Graph`, and highlights the single best-matching sentence.
+3. **Sentence-Level Context Locator (`find_best_matching_sentence`)**:
+   - Automatically splits abstracts/full-text into sentences and highlights the exact single sentence that best corresponds to the manuscript claim.
+4. **Local Reference Paper Extractor (`--refs-dir` / `-r`)**:
    - Accepts user-supplied directories of reference PDFs, DOCX, or TXT files.
-   - When online APIs lack abstract text, the system extracts abstracts directly from local reference papers.
-4. **Proxy & Rate Limit Resilience (`trust_env`)**:
+   - Scans multi-page PDF full text to perform sentence-level claim alignment when online APIs lack abstracts.
+5. **Proxy & Rate Limit Resilience (`trust_env`)**:
    - Includes `trust_env=True` and OpenAlex Polite Pool headers to eliminate SSL timeouts and HTTP 429 rate limit issues.
-5. **Modern Glassmorphism UI Reports**:
-   - Renders styled HTML reports with summary grids, badges, and highlighted context alignment.
 
 ---
 
 ## 📦 Installation & Setup
+
+### 1. Fast PyPI Installation (Coming Soon)
+
+```bash
+pip install academic-guardrail
+```
+> **Note**: The project is currently in active development. Please install from source for now. We will publish to PyPI shortly.
+
+### 2. Install from Source
 
 ```bash
 # 1. Clone the repository
