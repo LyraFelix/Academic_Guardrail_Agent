@@ -21,7 +21,7 @@
 ## 🖼️ Demo Preview
 
 ### 1. Browser UI Report Preview
-Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment (highlighted quotes represent **the exact matching sentence extracted directly from the reference abstract or local PDF**):
+Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment (highlighted quotes in report cards represent **the exact matching sentence extracted directly from the reference abstract or local PDF**):
 
 ![HTML Report Preview](docs/assets/report_preview.png)
 
@@ -73,7 +73,7 @@ Report output to: report.html
    - Accepts user-supplied directories of reference PDFs, DOCX, or TXT files.
    - Scans multi-page PDF full text to perform sentence-level claim alignment when online APIs lack abstracts.
 5. **Proxy & Rate Limit Resilience (`trust_env`)**:
-   - Includes `trust_env=True` and OpenAlex Polite Pool headers to eliminate SSL timeouts and HTTP 429 rate limit issues.
+   - Includes `trust_env=True` and OpenAlex Polite Pool headers to eliminate SSL timeouts and HTTP 429 rate limit issues across international API calls.
 
 ---
 
@@ -83,7 +83,7 @@ Report output to: report.html
 
 - **Python**: `>= 3.10`
 - **Core Packages**:
-  - `httpx` (Async HTTP requests with `trust_env` system proxy support)
+  - `httpx` (Async HTTP requests with `trust_env` system proxy support to resolve connection timeouts and 429 rate limits when querying OpenAlex/Crossref APIs)
   - `pypdf` & `python-docx` (Full-text parsing for local reference PDFs & DOCX manuscripts)
   - `rich` (Terminal console tables & colored card rendering)
   - `mcp` (Model Context Protocol 1.0.0 SDK)
@@ -93,7 +93,9 @@ Report output to: report.html
 ```bash
 pip install academic-guardrail
 ```
-> **Note**: The project is currently in active development. Please install from source for now. We will publish to PyPI shortly.
+> **💡 Notes & Notification**:
+> - **Installation Modes**: `pip install -e .` is for developers modifying source code locally (changes take effect immediately). `pip install academic-guardrail` is the stable release package for end users.
+> - **Stay Notified**: **Watch / Star** this repository to be notified of the official PyPI release.
 
 ### 3. Install from Source
 
@@ -102,7 +104,7 @@ pip install academic-guardrail
 git clone https://github.com/your-org/mcp-academic-guardrail.git
 cd mcp-academic-guardrail
 
-# 2. Editable install
+# 2. Editable install (Developer mode)
 pip install -e .
 ```
 
@@ -127,7 +129,7 @@ Verify a single DOI or citation:
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-Run the SciFact NLI Claim Alignment Benchmark:
+Run the SciFact NLI Claim Alignment Benchmark (from the **project root directory**):
 ```bash
 python benchmark_claims.py
 ```

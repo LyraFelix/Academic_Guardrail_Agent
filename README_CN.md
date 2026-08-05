@@ -21,7 +21,7 @@
 ## 🖼️ 运行效果预览 (Demo Preview)
 
 ### 1. HTML 审查报告效果 (Browser UI Preview)
-调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告（呈现在报告中的高亮文本为**从被引文献摘要或全篇 PDF 原文中切分提取出的吻合单句**）：
+调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告（呈现在报告卡片中的高亮文本为**从被引文献摘要或全篇 PDF 原文中切分提取出的吻合单句**）：
 
 ![HTML 审计报告效果预览](docs/assets/report_preview.png)
 
@@ -73,7 +73,7 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
    - 支持传入用户自定义的本地参考文献文件夹（`.pdf`, `.docx`, `.txt`）。
    - 当线上公网数据库缺少 Abstract 文本时，系统自动读取本地全篇原文（支持多页 PDF）进行句子级断言比对。
 5. **全自动网络代理与 API 重试保障 (`trust_env`)**:
-   - 内部 HTTP 客户端配置 `trust_env=True` 与 OpenAlex Polite Pool 请求头，自动读取系统代理，解决 HTTPS 超时与 429 Rate Limit 问题。
+   - 内部 HTTP 客户端配置 `trust_env=True` 与 OpenAlex Polite Pool 请求头，自动读取系统代理，解决国内网络连接超时与 429 Rate Limit 问题。
 
 ---
 
@@ -83,17 +83,19 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 
 - **Python**: `>= 3.10`
 - **核心第三方库**:
-  - `httpx` (支持 `trust_env` 系统代理读取与高并发异步请求)
-  - `pypdf` & `python-docx` (本地参考文献 PDF/DOCX 全文解析)
-  - `rich` (命令行控制台表格与色彩卡片渲染)
-  - `mcp` (Model Context Protocol 1.0.0 SDK)
+  - `httpx`（支持 `trust_env` 系统代理读取与高并发异步请求，**解决国内网络访问 OpenAlex/Crossref 等海外学术数据库时的 HTTPS 连接超时与 429 访问受限问题**）
+  - `pypdf` & `python-docx`（本地参考文献 PDF/DOCX 全文解析与断言抽取）
+  - `rich`（命令行控制台表格与色彩卡片渲染）
+  - `mcp`（Model Context Protocol 1.0.0 SDK）
 
 ### 2. PyPI 快捷安装 (即将推出)
 
 ```bash
 pip install academic-guardrail
 ```
-> **注**：目前项目处于快速迭代期，暂需从源码安装，我们将尽快发布至 PyPI 官方索引。
+> **💡 说明与关注通知**：
+> - **安装模式区分**：`pip install -e .` 适用于本地开发者源码修改与调试（修改代码即时生效）；`pip install academic-guardrail` 为面向终端用户的 PyPI 稳定发布版。
+> - **关注更新**：欢迎点击本仓库右上角 **Watch / Star** 关注，第一时间获取 PyPI 正式版发布的通知。
 
 ### 3. 源码安装
 
@@ -102,7 +104,7 @@ pip install academic-guardrail
 git clone https://github.com/your-org/mcp-academic-guardrail.git
 cd mcp-academic-guardrail
 
-# 2. 可编辑模式安装
+# 2. 源码可编辑模式安装（开发者模式）
 pip install -e .
 ```
 
@@ -112,7 +114,7 @@ pip install -e .
 
 ### 1. 命令行 (CLI) 使用
 
-审计指定论文原稿并自动打开浏览器：
+审计指定论文原稿并自动打开浏览器展示 HTML 报告：
 ```bash
 academic-guardrail audit manuscript.docx -b -o report.html
 ```
@@ -127,7 +129,7 @@ academic-guardrail audit manuscript.docx -r ./references -b -o report.html
 academic-guardrail verify "10.1109/CVPR.2016.90"
 ```
 
-运行 SciFact 权威断言断言评测基准：
+在**项目根目录**下运行 SciFact 权威断言评测基准：
 ```bash
 python benchmark_claims.py
 ```
