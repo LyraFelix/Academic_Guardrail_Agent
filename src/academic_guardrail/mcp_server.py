@@ -67,12 +67,6 @@ async def audit_document_claims(file_path: str) -> str:
 
     return "\n".join(output_lines)
 
-    summary = f"🛡️ **文档审计完成**: 总引用 {report.total_citations} 项 | 🟢 通过 {report.passed_count} | 🟡 警告 {report.warning_count} | 🔴 高危 {report.danger_count}\n"
-    for r in report.results:
-        summary += f"- [{r.risk_level.value}] {r.citation.raw_text[:40]}... -> {r.message}\n"
-
-    return summary
-
 
 def main():
     mcp.run()

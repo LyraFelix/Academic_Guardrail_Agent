@@ -57,19 +57,6 @@ def audit(file_path: str, output: str, refs_dir: Optional[str], open_browser: bo
         console.print(f"[green]已提取到 {report.total_citations} 条文献引用与断言上下文，已完成联网与语义审计。[/green]\n")
         results = report.results
 
-        passed = sum(1 for r in results if r.risk_level in [RiskLevel.PASS, RiskLevel.NOTICE])
-        warning = sum(1 for r in results if r.risk_level == RiskLevel.WARNING)
-        danger = sum(1 for r in results if r.risk_level == RiskLevel.DANGER)
-
-        report = DocumentAuditReport(
-            document_path=file_path,
-            total_citations=len(pairs),
-            passed_count=passed,
-            warning_count=warning,
-            danger_count=danger,
-            results=results
-        )
-
         # Display rich terminal table
         table = Table(title="🛡️ 学术引用审计明细表")
         table.add_column("引用ID", style="cyan")
