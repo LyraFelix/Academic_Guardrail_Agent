@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-08-05
 
 ### Added
-- Zero-Shot Multilingual Claim Alignment Engine (`claim_eval.py`) with 3D weighted feature matching & polarity antonym graph.
+- Hybrid Multilingual Claim Alignment Engine (`claim_eval.py`) with 3D weighted feature matching & polarity antonym graph.
 - Local Reference Paper Extractor (`ref_store.py`) supporting full-text PDF, DOCX, and TXT scanning.
 - Glassmorphism Dark Mode HTML Report Generator with interactive risk filter tabs and live search bar.
 - MCP Server interface (`mcp_server.py`) and CLI commands (`academic-guardrail audit` / `verify`).

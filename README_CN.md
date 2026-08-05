@@ -161,7 +161,7 @@ academic-guardrail verify "10.1109/CVPR.2016.90"
 | **SequenceMatcher (Ratio)** | 0.59 | 0.00 | 1.35 ms | 0 MB / 纯 CPU |
 | **Academic Guardrail (Ours)** | **0.75** | **1.00** | **5.44 ms** | **0 MB / 纯 CPU** |
 
-> 为什么默认采用基于规则与词根/极性树的 `Zero-Shot Multilingual Claim Alignment` 启发式算法而非 BGE-M3 / DeBERTa-NLI / Llama-3 深度学习分类器？因为深度神经网络需要 2GB~8GB 的 GPU 显存及数百兆预训练权重，且单次推理需要 50~500ms，违背了开源工具**零硬件门槛、极速本地 CLI/MCP 嵌入**的定位。
+> 为什么默认采用基于规则与词根/极性树的 `Hybrid Multilingual Claim Alignment` 启发式算法而非 BGE-M3 / DeBERTa-NLI / Llama-3 深度学习分类器？因为深度神经网络需要 2GB~8GB 的 GPU 显存及数百兆预训练权重，且单次推理需要 50~500ms，违背了开源工具**零硬件门槛、极速本地 CLI/MCP 嵌入**的定位。
 
 在项目根目录下运行完整 Baseline 对比评测脚本：
 ```bash

@@ -2,7 +2,7 @@
 
 <p center="align">
   <b>End-to-End Academic Citation & Claim Consistency Verification Agent (MCP Server & CLI)</b><br>
-  An open-source academic guardrail addressing <b>citation validity, retraction alerts, multilingual support, local reference extraction, and zero-shot claim alignment (Claim vs Content Match)</b>.
+  An open-source academic guardrail addressing <b>citation validity, retraction alerts, multilingual support, local reference extraction, and hybrid claim alignment (Claim vs Content Match)</b>.
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ Report output to: report.html
 
 ## 🌟 Key Features
 
-1. **Zero-Shot Multilingual Claim Alignment (`MultilingualFeatureExtractor`)**:
+1. **Hybrid Multilingual Claim Alignment (`MultilingualFeatureExtractor`)**:
    - **Zero-Setup Cross-Lingual Matching**: Requires no pre-training or specialized domain dictionaries. Directly compares Chinese manuscript claims against English reference abstracts out of the box.
    - **Algorithm Details**: Under the hood, combines Token Stemming, academic synonym normalization, and multilingual subword N-Gram feature matching.
    - SciFact Gold Standard Benchmark Performance:
@@ -75,7 +75,7 @@ Report output to: report.html
    - Automatically splits abstracts/full-text into sentences and highlights the exact single sentence in the reference paper that best corresponds to the manuscript claim.
    - Out-of-the-box support for **DOCX, PDF (multi-page full-text), Markdown (.md), LaTeX (.tex), BibTeX (.bib), and direct arXiv URLs (`https://arxiv.org/abs/1706.03762`)**.
 4. **Performance Benchmarks**:
-   - **Per-Claim Decision Latency**: Memory-based zero-shot NLI matching takes **~0.36 ms** per claim.
+   - **Per-Claim Decision Latency**: Memory-based hybrid claim matching takes **~0.36 ms** per claim.
    - **50-Citation Audit Execution Time**: Concurrent batch querying via `asyncio.gather` completes a full 50-citation manuscript audit in **< 1.5 seconds**.
 5. **Local Reference Paper Extractor (`--refs-dir` / `-r`)**:
    - Accepts user-supplied directories of reference PDFs, DOCX, or TXT files.
@@ -161,7 +161,7 @@ We evaluated `Academic Guardrail` against standard lexical baseline methods on t
 | **SequenceMatcher (Ratio)** | 0.59 | 0.00 | 1.35 ms | 0 MB / Pure CPU |
 | **Academic Guardrail (Ours)** | **0.75** | **1.00** | **5.44 ms** | **0 MB / Pure CPU** |
 
-> Why use a lightweight `Zero-Shot Multilingual Claim Alignment` heuristic algorithm over heavy pretrained NLI models (BGE-M3, DeBERTa-v3-NLI, Llama-3)? Neural NLI models require 2GB–8GB GPU VRAM and 50–500ms latency, which violates our core goal of a **zero-dependency, instant, CPU-only local CLI & MCP tool**.
+> Why use a lightweight `Hybrid Multilingual Claim Alignment` heuristic algorithm over heavy pretrained NLI models (BGE-M3, DeBERTa-v3-NLI, Llama-3)? Neural NLI models require 2GB–8GB GPU VRAM and 50–500ms latency, which violates our core goal of a **zero-dependency, instant, CPU-only local CLI & MCP tool**.
 
 Run the full baseline comparison script from the project root:
 ```bash

@@ -231,7 +231,7 @@ class ClaimEvaluator:
             if (c_has_pos and a_has_neg) or (c_has_neg and a_has_pos):
                 return 0.15, "Polarity mismatch: Claim directly contradicts abstract conclusion", best_sentence
 
-        # 2. Universal Zero-Shot Multilingual Alignment
+        # 2. Hybrid Multilingual Alignment
         overall_sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, abstract)
         final_score = round(max(overall_sim, sent_score), 2)
 
