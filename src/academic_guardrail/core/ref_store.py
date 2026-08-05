@@ -44,15 +44,15 @@ class LocalRefStore:
                 return "\n".join([p.text for p in doc.paragraphs if p.text])
             elif ext == '.pdf' and pypdf:
                 reader = pypdf.PdfReader(path)
-                pages = [p.extract_text() for p in reader.pages[:3] if p.extract_text()]
+                pages = [p.extract_text() for p in reader.pages if p.extract_text()]
                 return "\n".join(pages)
         except Exception:
             pass
         return ""
 
     def find_abstract_for_citation(self, title: str, raw_text: str) -> Optional[Tuple[str, str]]:
-        """Finds matching local paper text by title/raw_text similarity.
-        Returns (abstract_or_text, source_filename) or None.
+        """Finds matching local paper full-text by title/raw_text similarity.
+        Returns (full_text, source_filename) or None.
         """
         if not self.papers:
             return None
@@ -75,14 +75,8 @@ class LocalRefStore:
                 best_sim = sim
                 best_match_file = filename
 
-        if best_sim >= 0.40 and best_match_file:
+        if best_sim >= 0.35 and best_match_file:
             full_text = self.papers[best_match_file]
-            # Try extracting abstract block
-            abs_match = re.search(r'(?:摘要|Abstract)[\s\:\：]+([\s\S]{50,600})', full_text, re.IGNORECASE)
-            if abs_match:
-                return abs_match.group(1).strip(), best_match_file
-            else:
-                # Return first 500 characters
-                return full_text[:500].strip(), best_match_file
+            return full_text.strip(), best_match_file
 
         return None

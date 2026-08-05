@@ -80,7 +80,7 @@ class ClaimEvaluator:
         if not claim or not abstract:
             return "", 0.0
 
-        sentences = [s.strip() for s in re.split(r'[\.\?\!\;]\s*', abstract) if len(s.strip()) > 10]
+        sentences = [s.strip() for s in re.split(r'[\.\?\!\;\n]\s*', abstract) if len(s.strip()) > 10]
         if not sentences:
             return abstract[:150], 0.40
 
