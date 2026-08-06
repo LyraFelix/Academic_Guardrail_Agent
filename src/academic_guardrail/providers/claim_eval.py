@@ -1,4 +1,4 @@
-"""Claim Evaluator with Dual-Channel Semantic Matching, Antonym & Polarity Inversion Logic."""
+"""Claim Evaluator with Dual-Channel Semantic Matching, Lexical Feature Matching, and Polarity Rules."""
 
 import re
 import difflib
@@ -24,7 +24,7 @@ SYNONYM_MAP = {
 
 
 class MultilingualFeatureExtractor:
-    """Universal Zero-Shot Cross-Lingual N-Gram, Stemming & Subword Feature Matcher."""
+    """Extracts surface-level lexical features (Stems, Char N-Grams, and Sequence Ratios)."""
 
     @staticmethod
     def stem_word(word: str) -> str:
@@ -52,7 +52,8 @@ class MultilingualFeatureExtractor:
         return set(clean[i:i+n] for i in range(len(clean) - n + 1))
 
     @staticmethod
-    def compute_cross_lingual_similarity(claim: str, sentence: str) -> float:
+    def compute_lexical_similarity(claim: str, sentence: str) -> float:
+        """Pure surface lexical matching: 0.50 Stem Overlap + 0.30 Char N-Gram + 0.20 Sequence Matcher."""
         if not claim or not sentence:
             return 0.0
 
@@ -61,24 +62,20 @@ class MultilingualFeatureExtractor:
         c_ngrams = MultilingualFeatureExtractor.get_char_ngrams(claim, n=3)
         s_ngrams = MultilingualFeatureExtractor.get_char_ngrams(sentence, n=3)
 
-        if not c_stems or not s_stems:
-            stem_overlap = 0.0
-        else:
-            stem_overlap = len(c_stems.intersection(s_stems)) / float(max(len(c_stems), 1))
-
-        if not c_ngrams or not s_ngrams:
-            ngram_jaccard = 0.0
-        else:
-            ngram_jaccard = len(c_ngrams.intersection(s_ngrams)) / float(max(len(c_ngrams.union(s_ngrams)), 1))
-
+        stem_overlap = (len(c_stems.intersection(s_stems)) / float(max(len(c_stems), 1))) if c_stems and s_stems else 0.0
+        ngram_jaccard = (len(c_ngrams.intersection(s_ngrams)) / float(max(len(c_ngrams.union(s_ngrams)), 1))) if c_ngrams and s_ngrams else 0.0
         seq_sim = difflib.SequenceMatcher(None, claim.lower(), sentence.lower()).ratio()
 
-        final = 0.5 * stem_overlap + 0.3 * ngram_jaccard + 0.2 * seq_sim
-        return round(final, 2)
+        lexical_score = 0.50 * stem_overlap + 0.30 * ngram_jaccard + 0.20 * seq_sim
+        return round(lexical_score, 2)
+
+    @classmethod
+    def compute_cross_lingual_similarity(cls, claim: str, sentence: str) -> float:
+        return cls.compute_lexical_similarity(claim, sentence)
 
 
 class NegationScopeDetector:
-    """Detects negation scope in claims and abstracts."""
+    """Detects negation scope and polarity in claims and abstracts."""
 
     NEGATION_MARKERS = {
         "not", "no", "never", "cannot", "can't", "fail", "failed", "fails", "failing",
@@ -151,7 +148,7 @@ class NegationScopeDetector:
 
 
 class ClaimEvaluator:
-    """Dual-Channel Evaluator: Semantic Embedding + Lexical Matching + Scope-Aware Polarity Inversion."""
+    """Dual-Channel Alignment Evaluator: 0.55 Semantic Embedding + 0.35 Lexical Matching + 0.10 Polarity Alignment."""
 
     def __init__(self):
         self.semantic_matcher = SemanticMatcher()
@@ -168,18 +165,21 @@ class ClaimEvaluator:
         best_score = 0.0
 
         for sent in sentences:
-            # Dual-Channel sentence score
-            sem_sim = self.semantic_matcher.compute_similarity(claim, sent)
-            lex_sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, sent)
-            fusion = 0.60 * sem_sim + 0.40 * lex_sim
-            if fusion > best_score:
-                best_score = fusion
+            semantic_score = self.semantic_matcher.compute_similarity(claim, sent)
+            lexical_score = MultilingualFeatureExtractor.compute_lexical_similarity(claim, sent)
+            fusion_score = 0.55 * semantic_score + 0.45 * lexical_score
+            if fusion_score > best_score:
+                best_score = fusion_score
                 best_sent = sent
 
         return best_sent, round(best_score, 2)
 
     def evaluate_alignment(self, claim: str, abstract: str) -> Tuple[float, str, str]:
-        """Returns (score, reason, best_matching_abstract_sentence)."""
+        """Returns (final_score, reason, best_matching_abstract_sentence).
+        
+        Final Score Formula:
+            0.55 * semantic_score + 0.35 * lexical_score + 0.10 * polarity_score
+        """
         if not claim or not abstract:
             return 0.0, "Missing claim or abstract", ""
 
@@ -205,21 +205,17 @@ class ClaimEvaluator:
             if (c_has_pos and a_has_neg) or (c_has_neg and a_has_pos):
                 return 0.15, "Polarity mismatch: Claim directly contradicts abstract conclusion", best_sentence
 
-        # 2. Dual-Channel Fusion Score (Semantic + Lexical + N-Gram)
-        sem_sim = self.semantic_matcher.compute_similarity(claim, abstract)
-        lex_sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, abstract)
-        ngram_sim = len(MultilingualFeatureExtractor.get_char_ngrams(claim, 3).intersection(
-            MultilingualFeatureExtractor.get_char_ngrams(abstract, 3)
-        )) / float(max(1, len(MultilingualFeatureExtractor.get_char_ngrams(claim, 3))))
+        # 2. Dual-Channel Score Fusion
+        semantic_score = self.semantic_matcher.compute_similarity(claim, abstract)
+        lexical_score = MultilingualFeatureExtractor.compute_lexical_similarity(claim, abstract)
 
-        has_overlap = (sem_sim >= 0.20) or (lex_sim >= 0.20)
-        polarity_bonus = 0.15 if has_overlap else 0.0
+        has_overlap = (semantic_score >= 0.20) or (lexical_score >= 0.20)
+        polarity_score = 1.0 if has_overlap else 0.0
 
         fusion_score = (
-            0.55 * sem_sim +
-            0.25 * lex_sim +
-            polarity_bonus +
-            0.05 * min(1.0, ngram_sim)
+            0.55 * semantic_score +
+            0.35 * lexical_score +
+            0.10 * polarity_score
         )
         final_score = round(max(fusion_score, sent_score), 2)
 
