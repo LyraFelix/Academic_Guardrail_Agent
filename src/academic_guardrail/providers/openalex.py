@@ -18,8 +18,15 @@ class OpenAlexProvider:
     async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
         clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
         quoted_doi = urllib.parse.quote(clean_doi, safe="")
-        url = f"{self.BASE_URL}/https://doi.org/{quoted_doi}"
-        async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        client_kw = {"trust_env": True, "timeout": 12.0}
+        if proxy:
+            try:
+                client_kw["proxy"] = proxy
+            except Exception:
+                pass
+
+        async with httpx.AsyncClient(**client_kw) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:

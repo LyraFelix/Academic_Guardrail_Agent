@@ -1,5 +1,6 @@
-"""Chinese Academic Literature Matching Provider with Parallel API Resolution & Top-K Reference Reranking."""
+"""Chinese Academic Literature Matching Provider with Parallel API Resolution, Proxy Support, First-Completed Multi-Source Racing, and Local Fallback."""
 
+import os
 import re
 import urllib.parse
 import httpx
@@ -22,7 +23,7 @@ CHINESE_CORE_JOURNALS = [
 
 
 class ChineseAcademicProvider:
-    """Matches Chinese citations using OpenAlex, Crossref, Semantic Scholar, ReferenceResolver re-ranking, and CSSCI/CSCD fallback."""
+    """Matches Chinese citations using OpenAlex, Crossref, Semantic Scholar with proxy support, First-Completed racing, and CSSCI fallback."""
 
     def __init__(self):
         self.openalex = OpenAlexProvider()
@@ -45,9 +46,19 @@ class ChineseAcademicProvider:
 
     async def _search_semantic_scholar_candidates(self, query: str, limit: int = 5) -> list[Dict[str, Any]]:
         quoted_q = urllib.parse.quote(query)
-        url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
+        base_url = os.environ.get("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1")
+        url = f"{base_url}/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
+        
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        mounts = None
+        if proxy:
+            try:
+                mounts = httpx.AsyncClient(proxy=proxy)
+            except Exception:
+                pass
+
         try:
-            async with httpx.AsyncClient(trust_env=True, timeout=6.0) as client:
+            async with httpx.AsyncClient(trust_env=True, timeout=8.0) as client:
                 res = await client.get(url)
                 if res.status_code == 200:
                     data = res.json().get("data", [])
@@ -81,12 +92,12 @@ class ChineseAcademicProvider:
 
         async with sem:
             try:
-                # 1. Direct DOI lookup — parallel OpenAlex + Crossref
+                # Priority 1: Direct Online DOI Resolution (OpenAlex + Crossref)
                 if doi:
                     clean_doi = doi.strip().lower()
                     results = await asyncio.gather(
-                        asyncio.wait_for(self.openalex.get_by_doi(clean_doi), timeout=6.0),
-                        asyncio.wait_for(self.crossref.get_by_doi(clean_doi), timeout=6.0),
+                        asyncio.wait_for(self.openalex.get_by_doi(clean_doi), timeout=8.0),
+                        asyncio.wait_for(self.crossref.get_by_doi(clean_doi), timeout=8.0),
                         return_exceptions=True
                     )
                     openalex_res = results[0] if isinstance(results[0], dict) else None
@@ -112,7 +123,87 @@ class ChineseAcademicProvider:
                             "source": "Crossref/OpenAlex (DOI)"
                         }
 
-                # 2. Fast CSCD / CSSCI Chinese Core Journal Local Check (Zero Network Overhead)
+                # Priority 2: Online Multi-API Title Racing (OpenAlex, Semantic Scholar, Crossref)
+                core_title = self._extract_core_title(title)
+                query_str = core_title if (core_title and len(core_title) >= 5) else (title or doi or "")
+                
+                if query_str and len(query_str) >= 3:
+                    # Launch API queries concurrently and process as they complete (First Qualified Winner)
+                    async def fetch_openalex():
+                        try:
+                            cands = await asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=7.0)
+                            best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
+                            if best and best.get("title"):
+                                return {
+                                    "matched": True,
+                                    "doi": best.get("doi"),
+                                    "title": best.get("title"),
+                                    "is_retracted": best.get("is_retracted", False),
+                                    "abstract": best.get("abstract", ""),
+                                    "confidence": round(best.get("match_score", 0.90), 2),
+                                    "source": "OpenAlex (Title Search)"
+                                }
+                        except Exception:
+                            pass
+                        return None
+
+                    async def fetch_s2():
+                        try:
+                            cands = await asyncio.wait_for(self._search_semantic_scholar_candidates(query_str, limit=5), timeout=7.0)
+                            best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
+                            if best and best.get("title"):
+                                return {
+                                    "matched": True,
+                                    "doi": best.get("doi"),
+                                    "title": best.get("title"),
+                                    "is_retracted": best.get("is_retracted", False),
+                                    "abstract": best.get("abstract", ""),
+                                    "confidence": round(best.get("match_score", 0.90), 2),
+                                    "source": "Semantic Scholar (Online Abstract)"
+                                }
+                        except Exception:
+                            pass
+                        return None
+
+                    async def fetch_crossref():
+                        try:
+                            cands = await asyncio.wait_for(self.crossref.search_by_title(query_str, rows=5), timeout=7.0)
+                            best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
+                            if best and best.get("doi"):
+                                found_doi = best.get("doi")
+                                abstract = ""
+                                if found_doi:
+                                    try:
+                                        o_res = await asyncio.wait_for(self.openalex.get_by_doi(found_doi), timeout=4.0)
+                                        if o_res and o_res.get("abstract"):
+                                            abstract = o_res.get("abstract")
+                                    except Exception:
+                                        pass
+                                return {
+                                    "matched": True,
+                                    "doi": found_doi,
+                                    "title": best.get("title"),
+                                    "is_retracted": best.get("is_retracted", False),
+                                    "abstract": abstract,
+                                    "confidence": round(best.get("match_score", 0.85), 2),
+                                    "source": "Crossref (Online Title Search)"
+                                }
+                        except Exception:
+                            pass
+                        return None
+
+                    # Race Tasks: return immediately when any API succeeds
+                    tasks = [asyncio.create_task(fetch_openalex()), asyncio.create_task(fetch_s2()), asyncio.create_task(fetch_crossref())]
+                    for completed in asyncio.as_completed(tasks):
+                        result = await completed
+                        if result and result.get("matched"):
+                            # Cancel remaining background tasks
+                            for t in tasks:
+                                if not t.done():
+                                    t.cancel()
+                            return result
+
+                # Priority 3: CSSCI / CSCD Local Core Journal Fallback (Only when all online APIs failed/unverified)
                 search_corpus = f"{title} {raw_text or ''}"
                 matched_journal = next((j for j in CHINESE_CORE_JOURNALS if j in search_corpus), None)
                 if matched_journal:
@@ -127,73 +218,10 @@ class ChineseAcademicProvider:
                         "source": f"CSSCI/CSCD 本地核心期刊数据库 ({matched_journal})"
                     }
 
-                # 3. Retrieve Top-K candidates via parallel API query
-                core_title = self._extract_core_title(title)
-                query_str = core_title if (core_title and len(core_title) >= 5) else (title or doi or "")
-                if query_str and len(query_str) >= 3:
-                    tasks = [
-                        asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=6.0),
-                        asyncio.wait_for(self._search_semantic_scholar_candidates(query_str, limit=5), timeout=6.0),
-                        asyncio.wait_for(self.crossref.search_by_title(query_str, rows=5), timeout=6.0),
-                    ]
-                    title_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                    openalex_cands = title_results[0] if isinstance(title_results[0], list) else []
-                    s2_cands = title_results[1] if isinstance(title_results[1], list) else []
-                    cross_cands = title_results[2] if isinstance(title_results[2], list) else []
-
-                    # Re-rank candidates using ReferenceResolver against full citation
-                    best_openalex = self.resolver.select_best_candidate(dummy_cit, openalex_cands, min_score=0.40)
-                    if best_openalex and best_openalex.get("title"):
-                        return {
-                            "matched": True,
-                            "doi": best_openalex.get("doi"),
-                            "title": best_openalex.get("title"),
-                            "is_retracted": best_openalex.get("is_retracted", False),
-                            "abstract": best_openalex.get("abstract", ""),
-                            "confidence": round(best_openalex.get("match_score", 0.90), 2),
-                            "source": "OpenAlex (Title Search)"
-                        }
-
-                    best_s2 = self.resolver.select_best_candidate(dummy_cit, s2_cands, min_score=0.40)
-                    if best_s2 and best_s2.get("title"):
-                        return {
-                            "matched": True,
-                            "doi": best_s2.get("doi"),
-                            "title": best_s2.get("title"),
-                            "is_retracted": best_s2.get("is_retracted", False),
-                            "abstract": best_s2.get("abstract", ""),
-                            "confidence": round(best_s2.get("match_score", 0.90), 2),
-                            "source": "Semantic Scholar (Online Abstract)"
-                        }
-
-                    best_cross = self.resolver.select_best_candidate(dummy_cit, cross_cands, min_score=0.40)
-                    if best_cross and best_cross.get("doi"):
-                        found_doi = best_cross.get("doi")
-                        abstract = ""
-                        if found_doi:
-                            try:
-                                o_res = await asyncio.wait_for(
-                                    self.openalex.get_by_doi(found_doi), timeout=5.0
-                                )
-                                if o_res and o_res.get("abstract"):
-                                    abstract = o_res.get("abstract")
-                            except Exception:
-                                pass
-
-                        return {
-                            "matched": True,
-                            "doi": found_doi,
-                            "title": best_cross.get("title"),
-                            "is_retracted": best_cross.get("is_retracted", False),
-                            "abstract": abstract,
-                            "confidence": round(best_cross.get("match_score", 0.85), 2),
-                            "source": "Crossref (Online Title Search)"
-                        }
             except Exception:
                 pass
 
-            # 4. Default fallback
+            # Priority 4: Final Fallback
             return {
                 "matched": False,
                 "doi": doi,
