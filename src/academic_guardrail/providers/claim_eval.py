@@ -1,8 +1,9 @@
-"""Claim Evaluator with Antonym & Polarity Inversion Logic and Universal Zero-Shot Multilingual Claim Alignment."""
+"""Claim Evaluator with Dual-Channel Semantic Matching, Antonym & Polarity Inversion Logic."""
 
 import re
 import difflib
 from typing import Tuple, Dict, Any, Optional
+from academic_guardrail.core.semantic_matcher import SemanticMatcher
 
 OPPOSITE_PAIRS = [
     ({"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "accelerated", "提升", "增加", "促进", "加速"},
@@ -11,7 +12,6 @@ OPPOSITE_PAIRS = [
     ({"reduce", "reduces", "reduced", "reducing", "lower", "lowers", "lowered", "prevent", "prevents", "inhibit", "inhibited", "降低", "减少", "抑制"},
      {"did not lower", "did not reduce", "failed to lower", "failed to reduce", "elevate", "elevates", "elevated", "increase", "increases", "increased", "accelerate", "accelerates", "accelerated", "未降低", "未减少", "提升", "增加"})
 ]
-
 
 SYNONYM_MAP = {
     "enable": {"allow", "permit", "facilitate", "enable", "enables", "enabled"},
@@ -29,7 +29,7 @@ class MultilingualFeatureExtractor:
     @staticmethod
     def stem_word(word: str) -> str:
         w = word.lower().strip()
-        for suffix in ["ing", "tion", "ness", "ment", "able", "ed", "es", "s"]:
+        for suffix in ['ing', 'tion', 'ness', 'ment', 'able', 'ed', 'es', 's']:
             if len(w) > 4 and w.endswith(suffix):
                 return w[:-len(suffix)]
         return w
@@ -55,21 +55,30 @@ class MultilingualFeatureExtractor:
     def compute_cross_lingual_similarity(claim: str, sentence: str) -> float:
         if not claim or not sentence:
             return 0.0
+
         c_stems = MultilingualFeatureExtractor.get_stems(claim)
         s_stems = MultilingualFeatureExtractor.get_stems(sentence)
         c_ngrams = MultilingualFeatureExtractor.get_char_ngrams(claim, n=3)
         s_ngrams = MultilingualFeatureExtractor.get_char_ngrams(sentence, n=3)
+
         if not c_stems or not s_stems:
-            return 0.0
-        stem_overlap = len(c_stems.intersection(s_stems)) / float(max(len(c_stems), 1))
-        ngram_jaccard = len(c_ngrams.intersection(s_ngrams)) / float(max(len(c_ngrams.union(s_ngrams)), 1))
+            stem_overlap = 0.0
+        else:
+            stem_overlap = len(c_stems.intersection(s_stems)) / float(max(len(c_stems), 1))
+
+        if not c_ngrams or not s_ngrams:
+            ngram_jaccard = 0.0
+        else:
+            ngram_jaccard = len(c_ngrams.intersection(s_ngrams)) / float(max(len(c_ngrams.union(s_ngrams)), 1))
+
         seq_sim = difflib.SequenceMatcher(None, claim.lower(), sentence.lower()).ratio()
+
         final = 0.5 * stem_overlap + 0.3 * ngram_jaccard + 0.2 * seq_sim
         return round(final, 2)
 
 
 class NegationScopeDetector:
-    """检测否定范围，如 'does not significantly increase'.、'failed to markedly lower'.、'未显著提升'。"""
+    """Detects negation scope in claims and abstracts."""
 
     NEGATION_MARKERS = {
         "not", "no", "never", "cannot", "can't", "fail", "failed", "fails", "failing",
@@ -97,7 +106,6 @@ class NegationScopeDetector:
 
     @classmethod
     def get_text_polarity_profile(cls, text: str) -> Dict[str, bool]:
-        """解析文本极性，考虑中英文否定范围。"""
         t = text.lower()
         has_pos_polarity = False
         has_neg_polarity = False
@@ -143,13 +151,16 @@ class NegationScopeDetector:
 
 
 class ClaimEvaluator:
-    """评估断言与摘要对齐度，检测极性矛盾，支持多语言。"""
+    """Dual-Channel Evaluator: Semantic Embedding + Lexical Matching + Scope-Aware Polarity Inversion."""
+
+    def __init__(self):
+        self.semantic_matcher = SemanticMatcher()
 
     def find_best_matching_sentence(self, claim: str, abstract: str) -> Tuple[str, float]:
         if not claim or not abstract:
             return "", 0.0
 
-        sentences = [s.strip() for s in re.split(r'[.?!;\n]\s*', abstract) if len(s.strip()) > 10]
+        sentences = [s.strip() for s in re.split(r'[\.\?\!\;\n]\s*', abstract) if len(s.strip()) > 10]
         if not sentences:
             return abstract[:150], 0.40
 
@@ -157,9 +168,12 @@ class ClaimEvaluator:
         best_score = 0.0
 
         for sent in sentences:
-            sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, sent)
-            if sim > best_score:
-                best_score = sim
+            # Dual-Channel sentence score
+            sem_sim = self.semantic_matcher.compute_similarity(claim, sent)
+            lex_sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, sent)
+            fusion = 0.60 * sem_sim + 0.40 * lex_sim
+            if fusion > best_score:
+                best_score = fusion
                 best_sent = sent
 
         return best_sent, round(best_score, 2)
@@ -191,12 +205,26 @@ class ClaimEvaluator:
             if (c_has_pos and a_has_neg) or (c_has_neg and a_has_pos):
                 return 0.15, "Polarity mismatch: Claim directly contradicts abstract conclusion", best_sentence
 
-        # 2. Hybrid Multilingual Alignment
-        overall_sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, abstract)
-        final_score = round(max(overall_sim, sent_score), 2)
+        # 2. Dual-Channel Fusion Score (Semantic + Lexical + N-Gram)
+        sem_sim = self.semantic_matcher.compute_similarity(claim, abstract)
+        lex_sim = MultilingualFeatureExtractor.compute_cross_lingual_similarity(claim, abstract)
+        ngram_sim = len(MultilingualFeatureExtractor.get_char_ngrams(claim, 3).intersection(
+            MultilingualFeatureExtractor.get_char_ngrams(abstract, 3)
+        )) / float(max(1, len(MultilingualFeatureExtractor.get_char_ngrams(claim, 3))))
+
+        has_overlap = (sem_sim >= 0.20) or (lex_sim >= 0.20)
+        polarity_bonus = 0.15 if has_overlap else 0.0
+
+        fusion_score = (
+            0.55 * sem_sim +
+            0.25 * lex_sim +
+            polarity_bonus +
+            0.05 * min(1.0, ngram_sim)
+        )
+        final_score = round(max(fusion_score, sent_score), 2)
 
         if final_score >= 0.25:
-            reason = "正文断言与文献摘要核心观点高度吸合"
+            reason = "正文断言与文献摘要核心观点高度吻合"
         elif final_score >= 0.15:
             reason = "断言与摘要部分重合，建议人工核对"
         else:

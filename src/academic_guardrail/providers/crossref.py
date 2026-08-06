@@ -1,6 +1,6 @@
 import urllib.parse
 import httpx
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
 
@@ -48,3 +48,36 @@ class CrossrefProvider:
             except Exception as e:
                 raise ProviderError(f"Crossref unexpected error: {e}") from e
         return None
+
+    async def search_by_title(self, query: str, rows: int = 5) -> List[Dict[str, Any]]:
+        quoted_q = urllib.parse.quote(query)
+        url = f"{self.BASE_URL}?query.title={quoted_q}&rows={rows}"
+        headers = {"User-Agent": "AcademicGuardrail/0.1.0 (mailto:academic-guardrail@example.com)"}
+        try:
+            async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
+                res = await client.get(url, headers=headers)
+                if res.status_code == 200:
+                    items = res.json().get("message", {}).get("items", [])
+                    results = []
+                    for item in items:
+                        titles = item.get("title", [])
+                        t = titles[0] if titles else query
+                        authors_raw = item.get("author", [])
+                        authors = [f"{a.get('given', '')} {a.get('family', '')}".strip() for a in authors_raw]
+                        year = None
+                        issued = item.get("issued", {}).get("date-parts", [])
+                        if issued and issued[0]:
+                            year = issued[0][0]
+
+                        results.append({
+                            "title": t,
+                            "doi": item.get("DOI", "").lower(),
+                            "authors": authors,
+                            "year": year,
+                            "publisher": item.get("publisher"),
+                            "is_retracted": False
+                        })
+                    return results
+        except Exception:
+            pass
+        return []

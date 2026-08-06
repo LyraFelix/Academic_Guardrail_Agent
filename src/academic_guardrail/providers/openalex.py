@@ -46,26 +46,23 @@ class OpenAlexProvider:
                 raise ProviderError(f"OpenAlex unexpected error: {e}") from e
         return None
 
-    async def search_by_title(self, title: str) -> Optional[Dict[str, Any]]:
+    async def search_by_title(self, title: str, per_page: int = 5) -> list[Dict[str, Any]]:
         clean_query = title.replace("[J]", "").replace("[M]", "").replace("[D]", "").replace("[C]", "").strip()
-        url = f"{self.BASE_URL}?search={urllib.parse.quote(clean_query)}&per_page=3"
+        url = f"{self.BASE_URL}?search={urllib.parse.quote(clean_query)}&per_page={per_page}"
         async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:
                     data = res.json()
                     results = data.get("results", [])
-                    if results:
-                        return self._process_work(results[0])
+                    return [self._process_work(item) for item in results]
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
                     raise RateLimitError("OpenAlex API rate limit exceeded (HTTP 429)") from e
-                raise ProviderError(f"OpenAlex HTTP error: {e}") from e
-            except httpx.RequestError as e:
-                raise ProviderError(f"OpenAlex network error: {e}") from e
-            except Exception as e:
-                raise ProviderError(f"OpenAlex unexpected error: {e}") from e
-        return None
+                return []
+            except Exception:
+                return []
+        return []
 
     def _process_work(self, work: Dict[str, Any]) -> Dict[str, Any]:
         abstract = ""

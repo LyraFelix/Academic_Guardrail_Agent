@@ -1,4 +1,4 @@
-"""Chinese Academic Literature Matching Provider with Parallel API Resolution & CSSCI/CSCD Core Journal Fallback."""
+"""Chinese Academic Literature Matching Provider with Parallel API Resolution & Top-K Reference Reranking."""
 
 import re
 import urllib.parse
@@ -8,11 +8,12 @@ import difflib
 from typing import Optional, Dict, Any
 from academic_guardrail.providers.openalex import OpenAlexProvider
 from academic_guardrail.providers.crossref import CrossrefProvider
+from academic_guardrail.core.ref_resolver import ReferenceResolver
+from academic_guardrail.core.models import Citation
 from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
 sem = asyncio.Semaphore(5)
 
-# Expanded CSSCI / CSCD Chinese Core Journal Index
 CHINESE_CORE_JOURNALS = [
     "管理世界", "经济研究", "金融研究", "软件学报", "计算机学报", "中国社会科学",
     "法学研究", "世界经济", "会计研究", "中国工业经济", "数理统计与管理", "情报学报",
@@ -22,11 +23,12 @@ CHINESE_CORE_JOURNALS = [
 
 
 class ChineseAcademicProvider:
-    """Matches Chinese citations using OpenAlex, Crossref, Semantic Scholar, and CSSCI/CSCD core journal fallback."""
+    """Matches Chinese citations using OpenAlex, Crossref, Semantic Scholar, ReferenceResolver re-ranking, and CSSCI/CSCD fallback."""
 
     def __init__(self):
         self.openalex = OpenAlexProvider()
         self.crossref = CrossrefProvider()
+        self.resolver = ReferenceResolver()
 
     def _extract_core_title(self, raw_str: str) -> str:
         if not raw_str:
@@ -47,62 +49,42 @@ class ChineseAcademicProvider:
             return 0.0
         return difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio()
 
-    def _is_chinese_title_match(self, query: str, candidate: str) -> bool:
-        if not query or not candidate:
-            return False
-        q = query.lower()
-        c = candidate.lower()
-        sim = self._calc_similarity(q, c)
-        if sim >= 0.45:
-            return True
-        if len(q) >= 4 and (q in c or c in q):
-            return True
-        return False
-
-    async def _search_crossref_title(self, query: str) -> Optional[Dict[str, Any]]:
+    async def _search_semantic_scholar_candidates(self, query: str, limit: int = 5) -> list[Dict[str, Any]]:
         quoted_q = urllib.parse.quote(query)
-        url = f"https://api.crossref.org/works?query.title={quoted_q}&rows=1"
-        headers = {"User-Agent": "AcademicGuardrail/0.1.0 (mailto:academic-guardrail@example.com)"}
-        try:
-            async with httpx.AsyncClient(trust_env=True, timeout=8.0) as client:
-                res = await client.get(url, headers=headers)
-                if res.status_code == 200:
-                    items = res.json().get("message", {}).get("items", [])
-                    if items:
-                        item = items[0]
-                        titles = item.get("title", [])
-                        return {
-                            "title": titles[0] if titles else query,
-                            "doi": item.get("DOI", "").lower(),
-                            "is_retracted": False
-                        }
-        except Exception:
-            pass
-        return None
-
-    async def _search_semantic_scholar(self, query: str) -> Optional[Dict[str, Any]]:
-        quoted_q = urllib.parse.quote(query)
-        url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={quoted_q}&limit=1&fields=title,externalIds,abstract,isRetracted"
+        url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
         try:
             async with httpx.AsyncClient(trust_env=True, timeout=8.0) as client:
                 res = await client.get(url)
                 if res.status_code == 200:
                     data = res.json().get("data", [])
-                    if data:
-                        p = data[0]
+                    results = []
+                    for p in data:
                         ext_ids = p.get("externalIds", {})
                         doi = ext_ids.get("DOI") or ext_ids.get("ArXiv")
-                        return {
+                        authors = [a.get("name") for a in p.get("authors", []) if a.get("name")]
+                        results.append({
                             "title": p.get("title"),
                             "doi": doi.lower() if doi else None,
+                            "authors": authors,
+                            "year": p.get("year"),
+                            "venue": p.get("venue"),
                             "abstract": p.get("abstract", ""),
                             "is_retracted": p.get("isRetracted", False)
-                        }
+                        })
+                    return results
         except Exception:
             pass
-        return None
+        return []
 
     async def verify_citation(self, title: str, doi: Optional[str] = None, authors: Optional[list] = None, raw_text: Optional[str] = None) -> Dict[str, Any]:
+        dummy_cit = Citation(
+            id="cit_verify",
+            raw_text=raw_text or title or "",
+            doi=doi,
+            title=title,
+            authors=authors or []
+        )
+
         async with sem:
             try:
                 # 1. Direct DOI lookup — parallel OpenAlex + Crossref
@@ -136,76 +118,73 @@ class ChineseAcademicProvider:
                             "source": "Crossref/OpenAlex (DOI)"
                         }
 
-                # 2. Parallel Title Search across OpenAlex, Semantic Scholar, Crossref
+                # 2. Retrieve Top-K candidates in parallel from OpenAlex, Semantic Scholar, Crossref
                 core_title = self._extract_core_title(title)
                 query_str = core_title or title or doi or ""
                 if query_str and len(query_str) >= 3:
                     tasks = [
-                        asyncio.wait_for(self.openalex.search_by_title(query_str), timeout=6.0),
-                        asyncio.wait_for(self._search_semantic_scholar(query_str), timeout=6.0),
-                        asyncio.wait_for(self._search_crossref_title(query_str), timeout=6.0),
+                        asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=6.0),
+                        asyncio.wait_for(self._search_semantic_scholar_candidates(query_str, limit=5), timeout=6.0),
+                        asyncio.wait_for(self.crossref.search_by_title(query_str, rows=5), timeout=6.0),
                     ]
                     title_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    openalex_res = title_results[0] if isinstance(title_results[0], dict) else None
-                    s2_res = title_results[1] if isinstance(title_results[1], dict) else None
-                    cross_title_res = title_results[2] if isinstance(title_results[2], dict) else None
+                    openalex_cands = title_results[0] if isinstance(title_results[0], list) else []
+                    s2_cands = title_results[1] if isinstance(title_results[1], list) else []
+                    cross_cands = title_results[2] if isinstance(title_results[2], list) else []
 
-                    if openalex_res and openalex_res.get("title"):
-                        matched_title = openalex_res.get("title", "")
-                        if self._is_chinese_title_match(query_str, matched_title):
-                            return {
-                                "matched": True,
-                                "doi": openalex_res.get("doi"),
-                                "title": matched_title,
-                                "is_retracted": openalex_res.get("is_retracted", False),
-                                "abstract": openalex_res.get("abstract", ""),
-                                "confidence": 0.90,
-                                "source": "OpenAlex (Title Search)"
-                            }
+                    # Re-rank candidates using ReferenceResolver
+                    best_openalex = self.resolver.select_best_candidate(dummy_cit, openalex_cands, min_score=0.40)
+                    if best_openalex and best_openalex.get("title"):
+                        return {
+                            "matched": True,
+                            "doi": best_openalex.get("doi"),
+                            "title": best_openalex.get("title"),
+                            "is_retracted": best_openalex.get("is_retracted", False),
+                            "abstract": best_openalex.get("abstract", ""),
+                            "confidence": round(best_openalex.get("match_score", 0.90), 2),
+                            "source": "OpenAlex (Title Search)"
+                        }
 
-                    if s2_res and s2_res.get("title"):
-                        matched_title = s2_res.get("title", "")
-                        if self._is_chinese_title_match(query_str, matched_title):
-                            return {
-                                "matched": True,
-                                "doi": s2_res.get("doi"),
-                                "title": matched_title,
-                                "is_retracted": s2_res.get("is_retracted", False),
-                                "abstract": s2_res.get("abstract", ""),
-                                "confidence": 0.90,
-                                "source": "Semantic Scholar (Online Abstract)"
-                            }
+                    best_s2 = self.resolver.select_best_candidate(dummy_cit, s2_cands, min_score=0.40)
+                    if best_s2 and best_s2.get("title"):
+                        return {
+                            "matched": True,
+                            "doi": best_s2.get("doi"),
+                            "title": best_s2.get("title"),
+                            "is_retracted": best_s2.get("is_retracted", False),
+                            "abstract": best_s2.get("abstract", ""),
+                            "confidence": round(best_s2.get("match_score", 0.90), 2),
+                            "source": "Semantic Scholar (Online Abstract)"
+                        }
 
-                    if cross_title_res and cross_title_res.get("doi"):
-                        matched_title = cross_title_res.get("title", "")
-                        if self._is_chinese_title_match(query_str, matched_title):
-                            found_doi = cross_title_res.get("doi")
-                            abstract = ""
-                            if found_doi:
-                                try:
-                                    o_res = await asyncio.wait_for(
-                                        self.openalex.get_by_doi(found_doi), timeout=5.0
-                                    )
-                                    if o_res and o_res.get("abstract"):
-                                        abstract = o_res.get("abstract")
-                                except Exception:
-                                    pass
+                    best_cross = self.resolver.select_best_candidate(dummy_cit, cross_cands, min_score=0.40)
+                    if best_cross and best_cross.get("doi"):
+                        found_doi = best_cross.get("doi")
+                        abstract = ""
+                        if found_doi:
+                            try:
+                                o_res = await asyncio.wait_for(
+                                    self.openalex.get_by_doi(found_doi), timeout=5.0
+                                )
+                                if o_res and o_res.get("abstract"):
+                                    abstract = o_res.get("abstract")
+                            except Exception:
+                                pass
 
-                            return {
-                                "matched": True,
-                                "doi": found_doi,
-                                "title": matched_title,
-                                "is_retracted": cross_title_res.get("is_retracted", False),
-                                "abstract": abstract,
-                                "confidence": 0.85,
-                                "source": "Crossref (Online Title Search)"
-                            }
+                        return {
+                            "matched": True,
+                            "doi": found_doi,
+                            "title": best_cross.get("title"),
+                            "is_retracted": best_cross.get("is_retracted", False),
+                            "abstract": abstract,
+                            "confidence": round(best_cross.get("match_score", 0.85), 2),
+                            "source": "Crossref (Online Title Search)"
+                        }
             except Exception:
                 pass
 
             # 3. CSCD / CSSCI Chinese Core Journal Local Fallback
-            # Checks both title and raw_text for recognized Chinese core journal names
             search_corpus = f"{title} {raw_text or ''}"
             matched_journal = next((j for j in CHINESE_CORE_JOURNALS if j in search_corpus), None)
             if matched_journal:
