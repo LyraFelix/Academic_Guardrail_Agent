@@ -80,6 +80,7 @@ class AuditService:
                     is_matched = True
 
             target_abstract = abstract or local_abstract
+            score = None
 
             if not is_matched:
                 status = VerificationStatus.UNVERIFIED
@@ -108,7 +109,8 @@ class AuditService:
             risk_level=risk,
             verified_title=verify_res.get("title"),
             verified_doi=verify_res.get("doi"),
-            abstract_tldr=target_abstract or verify_res.get("abstract"),  # Bug 4 fix: store actual abstract used
+            abstract_tldr=target_abstract or verify_res.get("abstract"),
+            claim_alignment_score=score,
             message=msg
         )
 
