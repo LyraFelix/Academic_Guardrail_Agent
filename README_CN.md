@@ -23,11 +23,14 @@
 ### 1. HTML 审查报告效果 (Browser UI Preview)
 调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告：
 
-#### 视图一：引用审计与内容一致性卡片明细 (Card Details View)
-![HTML 审计报告卡片明细视图](docs/assets/report_cards_preview.png?v=2)
+#### 视图一：整体论文审计概览与统计仪表盘 (Header & Dashboard View)
+![HTML 审计报告整体概览视图](docs/assets/report_header_preview.png)
 
-#### 视图二：全量文献核查汇总表格 (Summary Table View)
-![HTML 审计报告汇总表格视图](docs/assets/report_table_preview.png?v=2)
+#### 视图二：引用审计与内容一致性卡片明细 (Card Details View)
+![HTML 审计报告卡片明细视图](docs/assets/report_cards_preview.png)
+
+#### 视图三：全量文献核查汇总表格 (Summary Table View)
+![HTML 审计报告汇总表格视图](docs/assets/report_table_preview.png)
 
 ### 2. 终端 CLI 交互式审计 (`--open` / `-b`)
 在终端执行审计命令后，系统自动分析原稿引用与断言，并在控制台实时输出分级风险明细：
@@ -96,6 +99,13 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
   - `pypdf` & `python-docx`（本地参考文献 PDF/DOCX 全文解析与断言抽取）
   - `rich`（命令行控制台表格与色彩卡片渲染）
   - `mcp`（Model Context Protocol 1.0.0 SDK）
+
+### 🌐 网络与代理配置说明 (Network & Proxy)
+
+> [!NOTE]
+> **网络环境与代理说明**：
+> - **中国大陆地区用户**：访问海外学术数据库 API（如 OpenAlex、Crossref、Semantic Scholar）**必须开启网络代理**（梯子/VPN 工具开启「系统代理」开关或 TUN 模式）。本工具内置自动代理检测机制（`SystemProxyDetector`），会自动识别 Windows 系统代理及本地常见代理端口（如 `7890`, `10809`, `1080`, `8080`），无需手动在终端配置环境变量。若海外 API 因网络不可达超时，系统会自动降级采用本地 CSSCI/CSCD 核心期刊库进行兜底核验。
+> - **中国境外/海外用户**：无需任何特殊代理配置，直接运行即可原生连接所有海外学术数据库。
 
 ### 2. PyPI 快捷安装 (即将推出)
 

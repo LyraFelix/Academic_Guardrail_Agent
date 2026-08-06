@@ -1,14 +1,42 @@
-"""Automatic Windows System Proxy Detector & Injector."""
+"""Automatic Windows System Proxy Detector & Injector.
+
+Detection order:
+  1. Existing environment variables (HTTP_PROXY / HTTPS_PROXY / ALL_PROXY)
+  2. urllib.request.getproxies()  (reads IE/WinInet system proxy)
+  3. Windows Registry direct read (HKCU Internet Settings)
+  4. Active port probing: tries common VPN/proxy local ports
+     (Clash=7890, V2RayN=10809, Shadowsocks/generic=1080, Clash SOCKS=7891)
+"""
 
 import os
 import sys
+import socket
 import urllib.request
-from typing import Optional, Dict
+from typing import Optional
 
 try:
     import winreg
 except ImportError:
     winreg = None
+
+# Common local proxy ports used by popular Windows VPN/proxy tools
+COMMON_PROXY_PORTS = [
+    7890,   # Clash for Windows (HTTP)
+    10809,  # V2RayN (HTTP)
+    1080,   # Shadowsocks / generic SOCKS (also used as HTTP by some tools)
+    8080,   # Fiddler / generic HTTP proxy
+    7891,   # Clash for Windows (SOCKS5 — httpx needs socksio for this)
+    10808,  # V2RayN (SOCKS)
+]
+
+
+def _is_port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    """Quick TCP connect check — no data exchanged, just SYN/ACK."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 class SystemProxyDetector:
@@ -31,7 +59,7 @@ class SystemProxyDetector:
                         if "=" in proxy_server:
                             for part in proxy_server.split(";"):
                                 if part.startswith("http=") or part.startswith("https="):
-                                    addr = part.split("=")[1]
+                                    addr = part.split("=", 1)[1]
                                     return f"http://{addr}" if not addr.startswith("http") else addr
                         else:
                             return f"http://{proxy_server}" if not proxy_server.startswith("http") else proxy_server
@@ -39,27 +67,65 @@ class SystemProxyDetector:
             pass
         return None
 
+    @staticmethod
+    def probe_local_proxy_ports() -> Optional[str]:
+        """Fallback: scan common VPN tool ports on 127.0.0.1.
+        Returns the first open HTTP proxy URL found, or None.
+        Note: skips SOCKS-only ports (7891, 10808) to avoid httpx compatibility issues
+        unless socksio is installed.
+        """
+        http_ports = [7890, 10809, 1080, 8080]
+        socks_ports = [7891, 10808]
+
+        for port in http_ports:
+            if _is_port_open("127.0.0.1", port):
+                return f"http://127.0.0.1:{port}"
+
+        # Try SOCKS5 only if socksio is available
+        try:
+            import socksio  # noqa: F401
+            for port in socks_ports:
+                if _is_port_open("127.0.0.1", port):
+                    return f"socks5://127.0.0.1:{port}"
+        except ImportError:
+            pass
+
+        return None
+
     @classmethod
     def get_active_proxy(cls) -> Optional[str]:
-        """Returns active proxy URL from env vars or Windows Registry."""
+        """Returns active proxy URL from env vars, urllib, Registry, or port scan."""
         # 1. Existing Environment Variables
-        env_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        env_proxy = (
+            os.environ.get("HTTPS_PROXY")
+            or os.environ.get("HTTP_PROXY")
+            or os.environ.get("ALL_PROXY")
+        )
         if env_proxy:
             return env_proxy
 
-        # 2. urllib System Proxies
+        # 2. urllib System Proxies (reads WinInet/IE settings)
         proxies = urllib.request.getproxies()
-        if "https" in proxies:
-            return proxies["https"] if proxies["https"].startswith("http") else f"http://{proxies['https']}"
-        if "http" in proxies:
-            return proxies["http"] if proxies["http"].startswith("http") else f"http://{proxies['http']}"
+        if "https" in proxies and proxies["https"]:
+            p = proxies["https"]
+            return p if p.startswith("http") else f"http://{p}"
+        if "http" in proxies and proxies["http"]:
+            p = proxies["http"]
+            return p if p.startswith("http") else f"http://{p}"
 
         # 3. Windows Registry Direct Detection
-        return cls.get_windows_registry_proxy()
+        reg_proxy = cls.get_windows_registry_proxy()
+        if reg_proxy:
+            return reg_proxy
+
+        # 4. Port Probing Fallback (handles cases where registry isn't updated in time)
+        return cls.probe_local_proxy_ports()
 
     @classmethod
     def auto_inject_system_proxy(cls) -> Optional[str]:
-        """Automatically injects detected system proxy into os.environ if missing."""
+        """Detects system proxy and injects into os.environ so httpx trust_env picks it up.
+        Prints a one-line status so users know whether proxy was found.
+        """
         proxy = cls.get_active_proxy()
         if proxy:
             if not os.environ.get("HTTP_PROXY"):
@@ -68,4 +134,7 @@ class SystemProxyDetector:
                 os.environ["HTTPS_PROXY"] = proxy
             if not os.environ.get("ALL_PROXY"):
                 os.environ["ALL_PROXY"] = proxy
+            print(f"[proxy] ✅ 检测到系统代理: {proxy}，已注入环境变量", flush=True)
+        else:
+            print("[proxy] ⚠️  未检测到活跃代理，英文数据库 API 可能无法访问", flush=True)
         return proxy

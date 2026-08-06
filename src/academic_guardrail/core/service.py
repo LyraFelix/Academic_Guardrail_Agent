@@ -17,7 +17,7 @@ from academic_guardrail.providers.claim_eval import ClaimEvaluator
 class AuditService:
     """Core Service Layer for Academic Guardrail Agent."""
 
-    def __init__(self, max_concurrency: int = 5, request_timeout: float = 25.0):
+    def __init__(self, max_concurrency: int = 5, request_timeout: float = 35.0):
         self.max_concurrency = max_concurrency
         self.request_timeout = request_timeout
         self.parser = DocumentParser()
@@ -92,7 +92,7 @@ class AuditService:
             else:
                 score, reason, best_sent = self.evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
                 context_str = f" [最匹配的原句: \"{best_sent[:120]}...\"]" if best_sent else ""
-                if score < 0.20:
+                if score < 0.35:  # Bug 4 fix: was 0.20, raised to meaningful threshold
                     status = VerificationStatus.CLAIM_MISMATCH
                     risk = RiskLevel.NOTICE
                     msg = f"🔵 正文断言与{source_name}摘要语义匹配度较弱 ({score:.2f})。{reason}{context_str}"
@@ -108,7 +108,7 @@ class AuditService:
             risk_level=risk,
             verified_title=verify_res.get("title"),
             verified_doi=verify_res.get("doi"),
-            abstract_tldr=verify_res.get("abstract"),
+            abstract_tldr=target_abstract or verify_res.get("abstract"),  # Bug 4 fix: store actual abstract used
             message=msg
         )
 

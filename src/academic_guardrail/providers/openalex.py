@@ -1,5 +1,6 @@
 """OpenAlex API Provider with URL quote escaping and filter fallback."""
 
+import os
 import re
 import urllib.parse
 import httpx
@@ -18,20 +19,18 @@ class OpenAlexProvider:
     async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
         clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
         quoted_doi = urllib.parse.quote(clean_doi, safe="")
+        url = f"{self.BASE_URL}/{quoted_doi}"  # Bug 1 fix: url was undefined
         proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
         client_kw = {"trust_env": True, "timeout": 12.0}
         if proxy:
-            try:
-                client_kw["proxy"] = proxy
-            except Exception:
-                pass
+            client_kw["proxy"] = proxy
 
         async with httpx.AsyncClient(**client_kw) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:
                     return self._process_work(res.json())
-                
+
                 # Check for arXiv DOI format
                 arxiv_match = re.search(r'\d{4}\.\d{4,5}', clean_doi)
                 if arxiv_match:
@@ -56,7 +55,11 @@ class OpenAlexProvider:
     async def search_by_title(self, title: str, per_page: int = 5) -> list[Dict[str, Any]]:
         clean_query = title.replace("[J]", "").replace("[M]", "").replace("[D]", "").replace("[C]", "").strip()
         url = f"{self.BASE_URL}?search={urllib.parse.quote(clean_query)}&per_page={per_page}"
-        async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        client_kw = {"trust_env": True, "timeout": 12.0}
+        if proxy:
+            client_kw["proxy"] = proxy
+        async with httpx.AsyncClient(**client_kw) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:
@@ -70,6 +73,7 @@ class OpenAlexProvider:
             except Exception:
                 return []
         return []
+
 
     def _process_work(self, work: Dict[str, Any]) -> Dict[str, Any]:
         abstract = ""

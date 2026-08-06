@@ -1,3 +1,4 @@
+import os
 import urllib.parse
 import httpx
 from typing import Optional, Dict, Any, List
@@ -14,19 +15,23 @@ class CrossrefProvider:
         quoted_doi = urllib.parse.quote(clean_doi, safe="")
         url = f"{self.BASE_URL}/{quoted_doi}"
         headers = {"User-Agent": "AcademicGuardrail/0.1.0 (mailto:academic-guardrail@example.com)"}
-        
-        async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        client_kw = {"trust_env": True, "timeout": 12.0}
+        if proxy:
+            client_kw["proxy"] = proxy
+
+        async with httpx.AsyncClient(**client_kw) as client:
             try:
                 res = await client.get(url, headers=headers)
                 if res.status_code == 200:
                     data = res.json().get("message", {})
-                    
+
                     update_to = data.get("update-to", [])
                     is_update_retracted = any(item.get("type") == "retraction" for item in update_to)
-                    
+
                     title_list = data.get("title", [])
                     title = title_list[0] if title_list else ""
-                    
+
                     is_title_retracted = "retracted" in title.lower() or "retraction" in title.lower()
                     is_type_retracted = data.get("type") in ["retraction", "retraction-notice"]
 
@@ -53,8 +58,12 @@ class CrossrefProvider:
         quoted_q = urllib.parse.quote(query)
         url = f"{self.BASE_URL}?query.title={quoted_q}&rows={rows}"
         headers = {"User-Agent": "AcademicGuardrail/0.1.0 (mailto:academic-guardrail@example.com)"}
+        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
+        client_kw = {"trust_env": True, "timeout": 12.0}
+        if proxy:
+            client_kw["proxy"] = proxy
         try:
-            async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
+            async with httpx.AsyncClient(**client_kw) as client:
                 res = await client.get(url, headers=headers)
                 if res.status_code == 200:
                     items = res.json().get("message", {}).get("items", [])

@@ -23,11 +23,14 @@
 ### 1. Browser UI Report Preview
 Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment:
 
-#### View 1: Card Details View
-![HTML Report Cards View](docs/assets/report_cards_preview.png?v=2)
+#### View 1: Header & Dashboard Summary View
+![HTML Report Header & Dashboard View](docs/assets/report_header_preview.png)
 
-#### View 2: Summary Table View
-![HTML Report Table View](docs/assets/report_table_preview.png?v=2)
+#### View 2: Citation Audit & Claim Consistency Cards View
+![HTML Report Cards View](docs/assets/report_cards_preview.png)
+
+#### View 3: Full Citation Audit Table View
+![HTML Report Table View](docs/assets/report_table_preview.png)
 
 ### 2. Interactive CLI Audit (`--open` / `-b`)
 Run the audit command in your terminal to inspect claims and citations across public APIs and local reference files:
@@ -96,6 +99,13 @@ Report output to: report.html
   - `pypdf` & `python-docx` (Full-text parsing for local reference PDFs & DOCX manuscripts)
   - `rich` (Terminal console tables & colored card rendering)
   - `mcp` (Model Context Protocol 1.0.0 SDK)
+
+### 🌐 Network & Proxy Requirements
+
+> [!NOTE]
+> **Network Setup Guidelines**:
+> - **Users in Mainland China**: Querying overseas academic databases (OpenAlex, Crossref, Semantic Scholar) requires an active proxy (VPN with System Proxy enabled or TUN mode). Academic Guardrail includes an automated proxy detector (`SystemProxyDetector`) that auto-detects Windows system proxies and probes common local ports (`7890`, `10809`, `1080`, `8080`). If overseas APIs are unreachable, the system automatically falls back to local CSSCI/CSCD core journal verification.
+> - **Overseas / Global Users**: No proxy configuration is required; direct network access works natively out of the box.
 
 ### 2. Fast PyPI Installation (Coming Soon)
 

@@ -74,7 +74,7 @@ class ReferenceResolver:
             except Exception:
                 pass
         else:
-            year_match = 0.5
+            year_match = 0.3  # Bug 3 fix: was 0.5, reduced to avoid false high scores when year is missing
 
         # 4. Venue / Publisher Match (0.15)
         venue_match = 0.5

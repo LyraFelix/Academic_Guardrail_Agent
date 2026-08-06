@@ -40,7 +40,11 @@ class ChineseAcademicProvider:
             title = parts[1]
         elif len(parts) > 0:
             title = parts[0]
-        title = re.split(r'[—–\-:：]', title)[0]
+        # Bug 5 fix: only split on colon/dash when the suffix part is long (>40 chars)
+        # avoids chopping "The Race between Man and Machine" into something too generic
+        colon_parts = re.split(r'[—–:：]', title, maxsplit=1)
+        if len(colon_parts) == 2 and len(colon_parts[1].strip()) > 40:
+            title = colon_parts[0]
         title = re.sub(r'\s*\d{4}\.?\s*$', '', title)
         return title.strip()
 
@@ -48,17 +52,15 @@ class ChineseAcademicProvider:
         quoted_q = urllib.parse.quote(query)
         base_url = os.environ.get("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1")
         url = f"{base_url}/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
-        
+
+        # Bug 2 fix: correctly build client kwargs with proxy string (not AsyncClient instance)
         proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-        mounts = None
+        client_kw = {"trust_env": True, "timeout": 8.0}
         if proxy:
-            try:
-                mounts = httpx.AsyncClient(proxy=proxy)
-            except Exception:
-                pass
+            client_kw["proxy"] = proxy
 
         try:
-            async with httpx.AsyncClient(trust_env=True, timeout=8.0) as client:
+            async with httpx.AsyncClient(**client_kw) as client:
                 res = await client.get(url)
                 if res.status_code == 200:
                     data = res.json().get("data", [])
@@ -131,7 +133,7 @@ class ChineseAcademicProvider:
                     # Launch API queries concurrently and process as they complete (First Qualified Winner)
                     async def fetch_openalex():
                         try:
-                            cands = await asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=7.0)
+                            cands = await asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=15.0)
                             best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
                             if best and best.get("title"):
                                 return {
@@ -149,7 +151,7 @@ class ChineseAcademicProvider:
 
                     async def fetch_s2():
                         try:
-                            cands = await asyncio.wait_for(self._search_semantic_scholar_candidates(query_str, limit=5), timeout=7.0)
+                            cands = await asyncio.wait_for(self._search_semantic_scholar_candidates(query_str, limit=5), timeout=15.0)
                             best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
                             if best and best.get("title"):
                                 return {
@@ -167,14 +169,14 @@ class ChineseAcademicProvider:
 
                     async def fetch_crossref():
                         try:
-                            cands = await asyncio.wait_for(self.crossref.search_by_title(query_str, rows=5), timeout=7.0)
+                            cands = await asyncio.wait_for(self.crossref.search_by_title(query_str, rows=5), timeout=15.0)
                             best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
                             if best and best.get("doi"):
                                 found_doi = best.get("doi")
                                 abstract = ""
                                 if found_doi:
                                     try:
-                                        o_res = await asyncio.wait_for(self.openalex.get_by_doi(found_doi), timeout=4.0)
+                                        o_res = await asyncio.wait_for(self.openalex.get_by_doi(found_doi), timeout=8.0)
                                         if o_res and o_res.get("abstract"):
                                             abstract = o_res.get("abstract")
                                     except Exception:
