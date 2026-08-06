@@ -10,7 +10,6 @@ from academic_guardrail.providers.openalex import OpenAlexProvider
 from academic_guardrail.providers.crossref import CrossrefProvider
 from academic_guardrail.core.ref_resolver import ReferenceResolver
 from academic_guardrail.core.models import Citation
-from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
 sem = asyncio.Semaphore(5)
 
@@ -44,16 +43,11 @@ class ChineseAcademicProvider:
         title = re.sub(r'\s*\d{4}\.?\s*$', '', title)
         return title.strip()
 
-    def _calc_similarity(self, s1: str, s2: str) -> float:
-        if not s1 or not s2:
-            return 0.0
-        return difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio()
-
     async def _search_semantic_scholar_candidates(self, query: str, limit: int = 5) -> list[Dict[str, Any]]:
         quoted_q = urllib.parse.quote(query)
         url = f"https://api.semanticscholar.org/graph/v1/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
         try:
-            async with httpx.AsyncClient(trust_env=True, timeout=8.0) as client:
+            async with httpx.AsyncClient(trust_env=True, timeout=6.0) as client:
                 res = await client.get(url)
                 if res.status_code == 200:
                     data = res.json().get("data", [])
@@ -91,8 +85,8 @@ class ChineseAcademicProvider:
                 if doi:
                     clean_doi = doi.strip().lower()
                     results = await asyncio.gather(
-                        asyncio.wait_for(self.openalex.get_by_doi(clean_doi), timeout=8.0),
-                        asyncio.wait_for(self.crossref.get_by_doi(clean_doi), timeout=8.0),
+                        asyncio.wait_for(self.openalex.get_by_doi(clean_doi), timeout=6.0),
+                        asyncio.wait_for(self.crossref.get_by_doi(clean_doi), timeout=6.0),
                         return_exceptions=True
                     )
                     openalex_res = results[0] if isinstance(results[0], dict) else None
@@ -118,9 +112,24 @@ class ChineseAcademicProvider:
                             "source": "Crossref/OpenAlex (DOI)"
                         }
 
-                # 2. Retrieve Top-K candidates in parallel from OpenAlex, Semantic Scholar, Crossref
+                # 2. Fast CSCD / CSSCI Chinese Core Journal Local Check (Zero Network Overhead)
+                search_corpus = f"{title} {raw_text or ''}"
+                matched_journal = next((j for j in CHINESE_CORE_JOURNALS if j in search_corpus), None)
+                if matched_journal:
+                    core_t = self._extract_core_title(title)
+                    return {
+                        "matched": True,
+                        "doi": doi or "cnki.local.core",
+                        "title": core_t or title,
+                        "is_retracted": False,
+                        "abstract": "",
+                        "confidence": 0.95,
+                        "source": f"CSSCI/CSCD 本地核心期刊数据库 ({matched_journal})"
+                    }
+
+                # 3. Retrieve Top-K candidates via parallel API query
                 core_title = self._extract_core_title(title)
-                query_str = core_title or title or doi or ""
+                query_str = core_title if (core_title and len(core_title) >= 5) else (title or doi or "")
                 if query_str and len(query_str) >= 3:
                     tasks = [
                         asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=6.0),
@@ -133,7 +142,7 @@ class ChineseAcademicProvider:
                     s2_cands = title_results[1] if isinstance(title_results[1], list) else []
                     cross_cands = title_results[2] if isinstance(title_results[2], list) else []
 
-                    # Re-rank candidates using ReferenceResolver
+                    # Re-rank candidates using ReferenceResolver against full citation
                     best_openalex = self.resolver.select_best_candidate(dummy_cit, openalex_cands, min_score=0.40)
                     if best_openalex and best_openalex.get("title"):
                         return {
@@ -183,21 +192,6 @@ class ChineseAcademicProvider:
                         }
             except Exception:
                 pass
-
-            # 3. CSCD / CSSCI Chinese Core Journal Local Fallback
-            search_corpus = f"{title} {raw_text or ''}"
-            matched_journal = next((j for j in CHINESE_CORE_JOURNALS if j in search_corpus), None)
-            if matched_journal:
-                core_title = self._extract_core_title(title)
-                return {
-                    "matched": True,
-                    "doi": doi or "cnki.local.core",
-                    "title": core_title or title,
-                    "is_retracted": False,
-                    "abstract": "",
-                    "confidence": 0.95,
-                    "source": f"CSSCI/CSCD 本地核心期刊数据库 ({matched_journal})"
-                }
 
             # 4. Default fallback
             return {

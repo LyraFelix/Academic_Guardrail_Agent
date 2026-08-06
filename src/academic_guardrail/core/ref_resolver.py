@@ -14,20 +14,23 @@ class ReferenceResolver:
             return 0.0
         return difflib.SequenceMatcher(None, s1.lower().strip(), s2.lower().strip()).ratio()
 
-    def _extract_authors(self, text_or_list: Any) -> set:
-        authors = set()
+    def _extract_author_tokens(self, text_or_list: Any) -> set:
+        tokens = set()
+        stop_words = {"and", "et", "al", "d", "c", "p", "a", "b", "e", "f", "g", "h", "j", "k", "l", "m", "n", "o", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"}
         if isinstance(text_or_list, list):
             for item in text_or_list:
                 if isinstance(item, str):
-                    authors.add(item.lower().strip())
+                    words = re.findall(r'\b[a-zA-Z\u4e00-\u9fa5]{2,}\b', item.lower())
+                    tokens.update([w for w in words if w not in stop_words])
                 elif isinstance(item, dict):
                     name = item.get("display_name") or item.get("author", {}).get("display_name") or ""
                     if name:
-                        authors.add(name.lower().strip())
+                        words = re.findall(r'\b[a-zA-Z\u4e00-\u9fa5]{2,}\b', name.lower())
+                        tokens.update([w for w in words if w not in stop_words])
         elif isinstance(text_or_list, str):
             words = re.findall(r'\b[a-zA-Z\u4e00-\u9fa5]{2,}\b', text_or_list.lower())
-            authors.update(words)
-        return authors
+            tokens.update([w for w in words if w not in stop_words])
+        return tokens
 
     def compute_candidate_score(self, cit: Citation, candidate: Dict[str, Any]) -> float:
         c_title = (cit.title or "").strip()
@@ -38,19 +41,19 @@ class ReferenceResolver:
 
         # 1. Title Similarity (0.30)
         title_sim = self._calc_similarity(c_title, cand_title)
-        # Give bonus if core query title is substring
-        if len(c_title) >= 4 and (c_title.lower() in cand_title.lower() or cand_title.lower() in c_title.lower()):
+        c_clean = re.sub(r'[^\w\s]', '', c_title.lower()).strip()
+        cand_clean = re.sub(r'[^\w\s]', '', cand_title.lower()).strip()
+        if len(c_clean) >= 4 and (c_clean in cand_clean or cand_clean in c_clean):
             title_sim = max(title_sim, 0.85)
 
-        # 2. Author Match (0.35)
-        c_authors = self._extract_authors(cit.authors or cit.raw_text)
-        cand_authors = self._extract_authors(candidate.get("authors") or candidate.get("author") or [])
+        # 2. Author Token Match (0.35)
+        c_tokens = self._extract_author_tokens(cit.authors or cit.raw_text)
+        cand_tokens = self._extract_author_tokens(candidate.get("authors") or candidate.get("author") or [])
         author_match = 0.0
-        if c_authors and cand_authors:
-            overlap = c_authors.intersection(cand_authors)
+        if c_tokens and cand_tokens:
+            overlap = c_tokens.intersection(cand_tokens)
             if overlap:
-                author_match = len(overlap) / float(max(len(c_authors), 1))
-                author_match = min(1.0, author_match * 1.5)  # Boost even on partial author hit
+                author_match = min(1.0, len(overlap) / float(max(1, min(len(c_tokens), len(cand_tokens)))))
 
         # 3. Year Match (0.20)
         c_year = cit.year
@@ -71,7 +74,7 @@ class ReferenceResolver:
             except Exception:
                 pass
         else:
-            year_match = 0.5  # Neutral if year missing
+            year_match = 0.5
 
         # 4. Venue / Publisher Match (0.15)
         venue_match = 0.5

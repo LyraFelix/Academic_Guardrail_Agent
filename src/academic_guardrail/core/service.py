@@ -65,21 +65,27 @@ class AuditService:
             status = VerificationStatus.RETRACTED
             risk = RiskLevel.DANGER
             msg = "🔴 论文存在撤稿记录，存在严重学术合规风险！"
-        elif verify_res.get("matched"):
+        else:
             abstract = verify_res.get("abstract", "")
             source_name = verify_res.get("source", "权威数据库")
+            is_matched = verify_res.get("matched", False)
 
-            # Fallback to local reference file if online abstract is missing
+            # Fallback to local reference file if unverified or online abstract is missing
             local_abstract = None
-            if not abstract and ref_store:
+            if (not is_matched or not abstract) and ref_store:
                 match_res = ref_store.find_abstract_for_citation(cit.title or "", cit.raw_text)
                 if match_res:
                     local_abstract, ref_filename = match_res
                     source_name = f"本地参考文献 ({ref_filename})"
+                    is_matched = True
 
             target_abstract = abstract or local_abstract
 
-            if not target_abstract:
+            if not is_matched:
+                status = VerificationStatus.UNVERIFIED
+                risk = RiskLevel.WARNING
+                msg = "🟡 数据库未核实该文献，请检查拼写或手工确认。"
+            elif not target_abstract:
                 status = VerificationStatus.VALID
                 risk = RiskLevel.PASS
                 msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验并跳过断言比对。"
@@ -94,10 +100,6 @@ class AuditService:
                     status = VerificationStatus.VALID
                     risk = RiskLevel.PASS
                     msg = f"🟢 正文断言与{source_name}摘要核心观点高度吻合 ({score:.2f})。{reason}{context_str}"
-        else:
-            status = VerificationStatus.UNVERIFIED
-            risk = RiskLevel.WARNING
-            msg = "🟡 数据库未核实该文献，请检查拼写或手工确认。"
 
         return VerificationResult(
             citation=cit,
