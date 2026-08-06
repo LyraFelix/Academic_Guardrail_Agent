@@ -24,10 +24,10 @@
 调起系统默认浏览器，展示具备卡片式布局、维度统计网格与上下文句级高亮对齐的现代学术审计报告：
 
 #### 视图一：引用审计与内容一致性卡片明细 (Card Details View)
-![HTML 审计报告卡片明细视图](docs/assets/report_cards_preview.png)
+![HTML 审计报告卡片明细视图](docs/assets/report_cards_preview.png?v=2)
 
 #### 视图二：全量文献核查汇总表格 (Summary Table View)
-![HTML 审计报告汇总表格视图](docs/assets/report_table_preview.png)
+![HTML 审计报告汇总表格视图](docs/assets/report_table_preview.png?v=2)
 
 ### 2. 终端 CLI 交互式审计 (`--open` / `-b`)
 在终端执行审计命令后，系统自动分析原稿引用与断言，并在控制台实时输出分级风险明细：

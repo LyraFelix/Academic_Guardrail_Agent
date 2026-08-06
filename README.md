@@ -24,10 +24,10 @@
 Auto-launches your system browser to render a modern glassmorphism HTML report with summary cards, badges, and sentence-level context alignment:
 
 #### View 1: Card Details View
-![HTML Report Cards View](docs/assets/report_cards_preview.png)
+![HTML Report Cards View](docs/assets/report_cards_preview.png?v=2)
 
 #### View 2: Summary Table View
-![HTML Report Table View](docs/assets/report_table_preview.png)
+![HTML Report Table View](docs/assets/report_table_preview.png?v=2)
 
 ### 2. Interactive CLI Audit (`--open` / `-b`)
 Run the audit command in your terminal to inspect claims and citations across public APIs and local reference files:
