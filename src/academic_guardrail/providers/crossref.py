@@ -15,7 +15,7 @@ class CrossrefProvider:
         url = f"{self.BASE_URL}/{quoted_doi}"
         headers = {"User-Agent": "AcademicGuardrail/0.1.0 (mailto:academic-guardrail@example.com)"}
         
-        async with httpx.AsyncClient(trust_env=True, timeout=8.0) as client:
+        async with httpx.AsyncClient(trust_env=True, timeout=3.0) as client:
             try:
                 res = await client.get(url, headers=headers)
                 if res.status_code == 200:
