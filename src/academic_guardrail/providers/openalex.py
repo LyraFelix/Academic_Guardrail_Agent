@@ -19,7 +19,7 @@ class OpenAlexProvider:
         clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
         quoted_doi = urllib.parse.quote(clean_doi, safe="")
         url = f"{self.BASE_URL}/https://doi.org/{quoted_doi}"
-        async with httpx.AsyncClient(trust_env=True, timeout=3.0) as client:
+        async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:
@@ -49,7 +49,7 @@ class OpenAlexProvider:
     async def search_by_title(self, title: str) -> Optional[Dict[str, Any]]:
         clean_query = title.replace("[J]", "").replace("[M]", "").replace("[D]", "").replace("[C]", "").strip()
         url = f"{self.BASE_URL}?search={urllib.parse.quote(clean_query)}&per_page=3"
-        async with httpx.AsyncClient(trust_env=True, timeout=3.0) as client:
+        async with httpx.AsyncClient(trust_env=True, timeout=12.0) as client:
             try:
                 res = await client.get(url, headers=self.headers)
                 if res.status_code == 200:

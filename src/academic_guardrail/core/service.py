@@ -17,7 +17,7 @@ from academic_guardrail.providers.claim_eval import ClaimEvaluator
 class AuditService:
     """Core Service Layer for Academic Guardrail Agent."""
 
-    def __init__(self, max_concurrency: int = 10, request_timeout: float = 15.0):
+    def __init__(self, max_concurrency: int = 5, request_timeout: float = 25.0):
         self.max_concurrency = max_concurrency
         self.request_timeout = request_timeout
         self.parser = DocumentParser()
@@ -33,7 +33,7 @@ class AuditService:
         """Verifies a single citation against online databases or local ref store."""
         try:
             verify_res = await asyncio.wait_for(
-                self.provider.verify_citation(title=cit.title or cit.raw_text, doi=cit.doi),
+                self.provider.verify_citation(title=cit.title or cit.raw_text, doi=cit.doi, raw_text=cit.raw_text),
                 timeout=self.request_timeout
             )
         except asyncio.TimeoutError:
