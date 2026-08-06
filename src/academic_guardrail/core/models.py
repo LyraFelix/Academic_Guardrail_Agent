@@ -46,6 +46,7 @@ class VerificationResult(BaseModel):
     verified_doi: Optional[str] = None
     retraction_info: Optional[str] = None
     abstract_tldr: Optional[str] = None
+    reference_confidence: Optional[float] = None  # 0.0 ~ 1.0 文献元数据匹配置信度 (Title/Author/Year Match Score)
     claim_alignment_score: Optional[float] = None  # 0.0 ~ 1.0 语义对齐得分
     message: str                          # 详细说明/修复指引
 

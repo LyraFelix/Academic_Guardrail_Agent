@@ -39,6 +39,7 @@ def test_local_ref_store_arbitrary_filename_matching():
         )
 
         assert result is not None
-        matched_text, source_fn = result
+        matched_text, source_fn, conf = result
         assert source_fn == "2023_v2_draft_final.txt"
         assert "autonomous driving" in matched_text.lower()
+        assert conf > 0.0

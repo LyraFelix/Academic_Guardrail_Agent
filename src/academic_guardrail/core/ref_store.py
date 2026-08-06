@@ -96,9 +96,9 @@ class LocalRefStore:
             fulltext=fulltext
         )
 
-    def find_abstract_for_citation(self, title: str, raw_text: str) -> Optional[Tuple[str, str]]:
+    def find_abstract_for_citation(self, title: str, raw_text: str) -> Optional[Tuple[str, str, float]]:
         """Finds matching local paper full-text/abstract by content title & metadata similarity.
-        Returns (target_text, source_filename) or None.
+        Returns (target_text, source_filename, confidence_score) or None.
         """
         if not self.records:
             return None
@@ -124,7 +124,8 @@ class LocalRefStore:
         if best_cand:
             fn = best_cand["filename"]
             target_text = best_cand.get("abstract") or best_cand.get("fulltext") or ""
-            return target_text.strip(), fn
+            conf = round(best_cand.get("match_score", 0.90), 2)
+            return target_text.strip(), fn, conf
 
         # Fallback: Substring search in fulltext
         c_title = (title or "").strip().lower()
@@ -132,6 +133,6 @@ class LocalRefStore:
             for rec in self.records:
                 if c_title in rec.fulltext.lower():
                     target_text = rec.abstract or rec.fulltext
-                    return target_text.strip(), rec.filename
+                    return target_text.strip(), rec.filename, 0.70
 
         return None

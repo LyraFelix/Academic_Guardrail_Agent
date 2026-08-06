@@ -32,3 +32,4 @@ class TestAuditService:
         assert report.total_citations == 1
         assert len(report.results) == 1
         assert report.results[0].citation.id == "cit_1"
+        assert report.results[0].reference_confidence is not None

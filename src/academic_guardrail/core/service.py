@@ -64,20 +64,23 @@ class AuditService:
         if verify_res.get("is_retracted"):
             status = VerificationStatus.RETRACTED
             risk = RiskLevel.DANGER
+            ref_confidence = verify_res.get("confidence", 1.0)
             msg = "🔴 论文存在撤稿记录，存在严重学术合规风险！"
         else:
             abstract = verify_res.get("abstract", "")
             source_name = verify_res.get("source", "权威数据库")
             is_matched = verify_res.get("matched", False)
+            ref_confidence = verify_res.get("confidence", 0.0) if is_matched else 0.0
 
             # Fallback to local reference file if unverified or online abstract is missing
             local_abstract = None
             if (not is_matched or not abstract) and ref_store:
                 match_res = ref_store.find_abstract_for_citation(cit.title or "", cit.raw_text)
                 if match_res:
-                    local_abstract, ref_filename = match_res
+                    local_abstract, ref_filename, local_conf = match_res
                     source_name = f"本地参考文献 ({ref_filename})"
                     is_matched = True
+                    ref_confidence = local_conf
 
             target_abstract = abstract or local_abstract
             score = None
@@ -85,6 +88,7 @@ class AuditService:
             if not is_matched:
                 status = VerificationStatus.UNVERIFIED
                 risk = RiskLevel.WARNING
+                ref_confidence = 0.0
                 msg = "🟡 数据库未核实该文献，请检查拼写或手工确认。"
             elif not target_abstract:
                 status = VerificationStatus.VALID
@@ -110,6 +114,7 @@ class AuditService:
             verified_title=verify_res.get("title"),
             verified_doi=verify_res.get("doi"),
             abstract_tldr=target_abstract or verify_res.get("abstract"),
+            reference_confidence=ref_confidence,
             claim_alignment_score=score,
             message=msg
         )
