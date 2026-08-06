@@ -57,3 +57,13 @@ class DocumentAuditReport(BaseModel):
     warning_count: int
     danger_count: int
     results: List[VerificationResult]
+
+
+class PaperRecord(BaseModel):
+    filename: str                         # 文件名 e.g. "2023_v2_final.pdf"
+    filepath: str                         # 完整绝对路径
+    title: str                            # 从正文截取抽取的实际标题
+    authors: List[str] = Field(default_factory=list) # 作者列表
+    year: Optional[int] = None            # 发表年份
+    abstract: str = ""                    # 自动提取到的 Abstract / 摘要
+    fulltext: str = ""                    # 提取到的原文全文本

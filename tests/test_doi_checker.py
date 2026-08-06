@@ -24,10 +24,17 @@ def test_retracted_doi_detection():
 
 
 def test_valid_doi_resolution():
-    """Title-based resolution via Crossref (network-dependent)."""
+    """Title-based resolution via Crossref/OpenAlex."""
     provider = ChineseAcademicProvider()
-    res = asyncio.run(provider.verify_citation(
-        title="Attention Is All You Need", doi=None
-    ))
+    mock_cand = [{
+        "title": "Attention Is All You Need",
+        "doi": "10.48550/arxiv.1706.03762",
+        "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks.",
+        "is_retracted": False
+    }]
+    with patch.object(provider.openalex, "search_by_title", AsyncMock(return_value=mock_cand)):
+        res = asyncio.run(provider.verify_citation(
+            title="Attention Is All You Need", doi=None
+        ))
     assert res["matched"] is True
     assert res["is_retracted"] is False
