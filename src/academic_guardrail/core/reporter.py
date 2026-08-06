@@ -14,9 +14,9 @@ class ReportGenerator:
     """Generates Markdown, HTML, and terminal audit reports."""
 
     def generate_markdown(self, report: DocumentAuditReport) -> str:
-        md = []
+        import os
         md.append(f"# 🛡️ 学术论文引用与断言审查报告 (Academic Guardrail Report)")
-        md.append(f"**审计文件**: `{report.document_path}`")
+        md.append(f"**审计文件**: `{os.path.basename(report.document_path)}`")
         md.append(f"**引用总数**: {report.total_citations} | 🟢 合格: {report.passed_count} | 🟡 警告: {report.warning_count} | 🔴 高危: {report.danger_count}\n")
         
         md.append("---")
@@ -127,7 +127,8 @@ class ReportGenerator:
 
         full_cards = "\n".join(cards_html)
         full_rows = "\n".join(rows_html)
-        doc_name = html.escape(report.document_path)
+        import os
+        doc_name = html.escape(os.path.basename(report.document_path))
 
         html_template = f"""<!DOCTYPE html>
 <html lang="zh-CN">

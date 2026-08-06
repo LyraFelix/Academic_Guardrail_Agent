@@ -32,8 +32,6 @@ detected_proxy = SystemProxyDetector.auto_inject_system_proxy()
 @click.group()
 def main():
     """🛡️ Academic Guardrail Agent CLI Tool"""
-    if detected_proxy:
-        console.print(f"[dim]🌐 已自动识别系统代理并挂载端口: {detected_proxy}[/dim]")
     pass
 
 
