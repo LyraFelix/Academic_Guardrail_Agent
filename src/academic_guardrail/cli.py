@@ -24,9 +24,16 @@ from academic_guardrail.core.models import RiskLevel
 from academic_guardrail.core.service import AuditService
 
 
+from academic_guardrail.core.proxy_detector import SystemProxyDetector
+
+# Auto-detect and inject active Windows system proxy
+detected_proxy = SystemProxyDetector.auto_inject_system_proxy()
+
 @click.group()
 def main():
     """🛡️ Academic Guardrail Agent CLI Tool"""
+    if detected_proxy:
+        console.print(f"[dim]🌐 已自动识别系统代理并挂载端口: {detected_proxy}[/dim]")
     pass
 
 
