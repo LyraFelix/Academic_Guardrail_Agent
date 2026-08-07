@@ -1,15 +1,42 @@
 """Model Context Protocol (MCP) Server for Academic Guardrail Agent."""
 
-import asyncio
+import functools
 from mcp.server.fastmcp import FastMCP
 from academic_guardrail.core.service import AuditService
+from academic_guardrail.core.exceptions import (
+    AcademicGuardrailError, ParserError, ProviderError, RateLimitError
+)
 
 mcp = FastMCP("Academic Guardrail Agent")
 service = AuditService()
 provider = service.provider
 
 
+def handle_mcp_exceptions(func):
+    """Global exception middleware decorator for MCP Tool Handlers.
+    Prevents unhandled crashes and returns structured, LLM-friendly error descriptions.
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except RateLimitError as e:
+            return f"🟡 [MCP RATE_LIMIT] 触发数据库速率限制 (HTTP 429): {e}"
+        except ProviderError as e:
+            return f"🟡 [MCP PROVIDER_ERROR] 学术数据库联网查询失败: {e}"
+        except ParserError as e:
+            return f"❌ [MCP PARSER_ERROR] 文档解析失败: {e}"
+        except AcademicGuardrailError as e:
+            return f"⚠️ [MCP ERROR] 审计逻辑执行失败: {e}"
+        except FileNotFoundError as e:
+            return f"❌ [MCP FILE_NOT_FOUND] 未找到指定文件: {e}"
+        except Exception as e:
+            return f"❌ [MCP UNHANDLED_ERROR] 发生未知服务异常: {str(e)}"
+    return wrapper
+
+
 @mcp.tool()
+@handle_mcp_exceptions
 async def verify_single_citation(citation_str_or_doi: str) -> str:
     """验证单条文献引用的真实性、DOI 匹配及撤稿状态。"""
     is_doi = citation_str_or_doi.startswith("10.") or "doi.org" in citation_str_or_doi
@@ -27,6 +54,7 @@ async def verify_single_citation(citation_str_or_doi: str) -> str:
 
 
 @mcp.tool()
+@handle_mcp_exceptions
 async def check_paper_retraction(doi: str) -> str:
     """专门查询指定 DOI 论文是否存在撤稿记录。"""
     res = await provider.verify_citation(title="", doi=doi)
@@ -39,12 +67,10 @@ async def check_paper_retraction(doi: str) -> str:
 
 
 @mcp.tool()
+@handle_mcp_exceptions
 async def audit_document_claims(file_path: str) -> str:
     """全面审计论文原稿（.pdf, .docx, .md, .tex），检查引用真实性与断言一致性。"""
-    try:
-        report = await service.audit_document(file_path)
-    except Exception as e:
-        return f"❌ 无法解析文档: {str(e)}"
+    report = await service.audit_document(file_path)
 
     if report.total_citations == 0:
         return "ℹ️ 未在文档中识别出任何文献引用标记或 GB/T 7714 格式。"
