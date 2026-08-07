@@ -23,3 +23,24 @@ def test_parse_gbt7714_text(tmp_path):
     cit, claim = pairs[0]
     assert "张三" in cit.authors or "10.1016" in cit.raw_text or "深度学习" in cit.title
     assert claim.citation_id == cit.id
+
+
+def test_strip_math_and_code():
+    parser = DocumentParser()
+    text = "Formula $E = mc^2$ and code `print([1])` and block ```[2]```"
+    stripped = parser._strip_math_and_code(text)
+    assert "$E = mc^2$" not in stripped
+    assert "`print([1])`" not in stripped
+    assert "```[2]```" not in stripped
+
+
+def test_line_contains_citation_range():
+    parser = DocumentParser()
+    line = "根据相关研究表明[1, 3-5]，技术能够显著提升效率。"
+    assert parser._line_contains_citation(line, "1")
+    assert parser._line_contains_citation(line, "3")
+    assert parser._line_contains_citation(line, "4")
+    assert parser._line_contains_citation(line, "5")
+    assert not parser._line_contains_citation(line, "2")
+    assert not parser._line_contains_citation(line, "6")
+

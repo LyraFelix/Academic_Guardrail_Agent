@@ -70,6 +70,7 @@ class AuditService:
             status = VerificationStatus.RETRACTED
             risk = RiskLevel.DANGER
             ref_confidence = verify_res.get("confidence", 1.0)
+            nli_state = "CONTRADICTED"
             msg = "🔴 论文存在撤稿记录，存在严重学术合规风险！"
         else:
             abstract = verify_res.get("abstract", "")
@@ -94,21 +95,25 @@ class AuditService:
                 status = VerificationStatus.UNVERIFIED
                 risk = RiskLevel.WARNING
                 ref_confidence = 0.0
+                nli_state = "UNVERIFIED"
                 msg = "🟡 数据库未核实该文献，请检查拼写或手工确认。"
             elif not target_abstract:
                 status = VerificationStatus.VALID
                 risk = RiskLevel.PASS
+                nli_state = "NEUTRAL"
                 msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验并跳过断言比对。"
             else:
                 score, reason, best_sent = self.evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
                 context_str = f" [最匹配的原句: \"{best_sent[:120]}...\"]" if best_sent else ""
-                if score < 0.35:  # Bug 4 fix: was 0.20, raised to meaningful threshold
+                if score < 0.35:
                     status = VerificationStatus.CLAIM_MISMATCH
                     risk = RiskLevel.NOTICE
+                    nli_state = "CONTRADICTED"
                     msg = f"🔵 正文断言与{source_name}摘要语义匹配度较弱 ({score:.2f})。{reason}{context_str}"
                 else:
                     status = VerificationStatus.VALID
                     risk = RiskLevel.PASS
+                    nli_state = "ENTAILED"
                     msg = f"🟢 正文断言与{source_name}摘要核心观点高度吻合 ({score:.2f})。{reason}{context_str}"
 
         return VerificationResult(
@@ -121,6 +126,7 @@ class AuditService:
             abstract_tldr=target_abstract or verify_res.get("abstract"),
             reference_confidence=ref_confidence,
             claim_alignment_score=score,
+            nli_state=nli_state,
             message=msg
         )
 

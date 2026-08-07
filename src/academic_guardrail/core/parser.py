@@ -54,9 +54,46 @@ class DocumentParser:
         )
         return [(citation, claim)]
 
+    @staticmethod
+    def _strip_math_and_code(text: str) -> str:
+        """Strips code blocks, inline code, and LaTeX math blocks/inline math to prevent false matches."""
+        # 1. Code blocks ```...```
+        t = re.sub(r'```[\s\S]*?```', '', text)
+        # 2. Inline code `...`
+        t = re.sub(r'`[^`\n]+`', '', t)
+        # 3. LaTeX environments \begin{equation}...\end{equation} or \begin{align}...\end{align}
+        t = re.sub(r'\\begin\{(?:equation|align|math|eqnarray)\*?\}[\s\S]*?\\end\{(?:equation|align|math|eqnarray)\*?\}', '', t)
+        # 4. Display math $$...$$
+        t = re.sub(r'\$\$[\s\S]*?\$\$', '', t)
+        # 5. Inline math $...$ (avoiding dollar signs with numbers like $100)
+        t = re.sub(r'\$(?!\s)[^\$\n]+(?<!\s)\$', '', t)
+        return t
+
+    @staticmethod
+    def _line_contains_citation(line: str, cite_num: str) -> bool:
+        """Checks if line contains citation bracket matching cite_num, supporting range expansion like [1, 3-5]."""
+        if not cite_num.isdigit():
+            return re.search(r'\[\s*' + re.escape(cite_num) + r'\s*\]', line) is not None
+
+        target_num = int(cite_num)
+        for match in re.finditer(r'\[\s*([\d\s,,\-\–\—]+)\s*\]', line):
+            content = match.group(1)
+            for part in content.split(','):
+                part = part.strip()
+                if '-' in part or '–' in part or '—' in part:
+                    range_parts = re.split(r'[\-\–\—]', part)
+                    if len(range_parts) == 2 and range_parts[0].strip().isdigit() and range_parts[1].strip().isdigit():
+                        start, end = int(range_parts[0].strip()), int(range_parts[1].strip())
+                        if start <= target_num <= end:
+                            return True
+                elif part.isdigit() and int(part) == target_num:
+                    return True
+        return False
+
     def _extract_citations_and_claims_from_text(self, text: str, location_prefix: str = "") -> List[Tuple[Citation, ContextClaim]]:
         pairs: List[Tuple[Citation, ContextClaim]] = []
-        lines = text.split('\n')
+        clean_text = self._strip_math_and_code(text)
+        lines = clean_text.split('\n')
         
         # 1. Parse Reference Section / Inline Citations
         for i, line in enumerate(lines):
@@ -102,7 +139,7 @@ class DocumentParser:
                 claim_sentence = ""
                 context = ""
                 for ctx_line in lines:
-                    if re.search(r'\[\s*' + re.escape(cite_num) + r'\s*\]', ctx_line) and ctx_line != line_str:
+                    if ctx_line != line_str and self._line_contains_citation(ctx_line, cite_num):
                         claim_sentence = ctx_line.strip()
                         context = ctx_line.strip()
                         break
