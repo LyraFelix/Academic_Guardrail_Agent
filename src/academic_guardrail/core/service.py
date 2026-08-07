@@ -21,8 +21,13 @@ class AuditService:
         self.max_concurrency = max_concurrency
         self.request_timeout = request_timeout
         self.parser = DocumentParser()
-        self.provider = ChineseAcademicProvider()
+        self.provider = ChineseAcademicProvider(max_concurrency=max_concurrency)
         self.evaluator = ClaimEvaluator()
+
+    async def close(self):
+        """Closes provider HTTP client session pools."""
+        if hasattr(self.provider, "client") and self.provider.client:
+            await self.provider.client.close()
 
     async def verify_single_item(
         self,

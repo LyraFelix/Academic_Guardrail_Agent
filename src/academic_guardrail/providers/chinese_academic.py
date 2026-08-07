@@ -1,18 +1,15 @@
-"""Chinese Academic Literature Matching Provider with Parallel API Resolution, Proxy Support, First-Completed Multi-Source Racing, and Local Fallback."""
+"""Chinese Academic Literature Matching Provider with Parallel API Resolution, Session Reuse, First-Completed Multi-Source Racing, and Local Fallback."""
 
 import os
 import re
 import urllib.parse
-import httpx
 import asyncio
-import difflib
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from academic_guardrail.providers.http_client import AcademicHttpClient
 from academic_guardrail.providers.openalex import OpenAlexProvider
 from academic_guardrail.providers.crossref import CrossrefProvider
 from academic_guardrail.core.ref_resolver import ReferenceResolver
 from academic_guardrail.core.models import Citation
-
-sem = asyncio.Semaphore(5)
 
 CHINESE_CORE_JOURNALS = [
     "管理世界", "经济研究", "金融研究", "软件学报", "计算机学报", "中国社会科学",
@@ -25,10 +22,25 @@ CHINESE_CORE_JOURNALS = [
 class ChineseAcademicProvider:
     """Matches Chinese citations using OpenAlex, Crossref, Semantic Scholar with proxy support, First-Completed racing, and CSSCI fallback."""
 
-    def __init__(self):
-        self.openalex = OpenAlexProvider()
-        self.crossref = CrossrefProvider()
+    def __init__(
+        self,
+        email: Optional[str] = "academic-guardrail@example.com",
+        client: Optional[AcademicHttpClient] = None,
+        max_concurrency: int = 5
+    ):
+        self.email = email or "academic-guardrail@example.com"
+        self.client = client or AcademicHttpClient(email=self.email)
+        self.openalex = OpenAlexProvider(email=self.email, client=self.client)
+        self.crossref = CrossrefProvider(email=self.email, client=self.client)
         self.resolver = ReferenceResolver()
+        self.max_concurrency = max_concurrency
+        self._sem: Optional[asyncio.Semaphore] = None
+
+    def _get_semaphore(self) -> asyncio.Semaphore:
+        """Returns or lazily initializes an event-loop-safe Semaphore."""
+        if self._sem is None:
+            self._sem = asyncio.Semaphore(self.max_concurrency)
+        return self._sem
 
     def _extract_core_title(self, raw_str: str) -> str:
         if not raw_str:
@@ -40,50 +52,44 @@ class ChineseAcademicProvider:
             title = parts[1]
         elif len(parts) > 0:
             title = parts[0]
-        # Bug 5 fix: only split on colon/dash when the suffix part is long (>40 chars)
-        # avoids chopping "The Race between Man and Machine" into something too generic
         colon_parts = re.split(r'[—–:：]', title, maxsplit=1)
         if len(colon_parts) == 2 and len(colon_parts[1].strip()) > 40:
             title = colon_parts[0]
         title = re.sub(r'\s*\d{4}\.?\s*$', '', title)
         return title.strip()
 
-    async def _search_semantic_scholar_candidates(self, query: str, limit: int = 5) -> list[Dict[str, Any]]:
+    async def _search_semantic_scholar_candidates(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
         quoted_q = urllib.parse.quote(query)
         base_url = os.environ.get("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1")
         url = f"{base_url}/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
 
-        # Bug 2 fix: correctly build client kwargs with proxy string (not AsyncClient instance)
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-        client_kw = {"trust_env": True, "timeout": 8.0}
-        if proxy:
-            client_kw["proxy"] = proxy
-
-        try:
-            async with httpx.AsyncClient(**client_kw) as client:
-                res = await client.get(url)
-                if res.status_code == 200:
-                    data = res.json().get("data", [])
-                    results = []
-                    for p in data:
-                        ext_ids = p.get("externalIds", {})
-                        doi = ext_ids.get("DOI") or ext_ids.get("ArXiv")
-                        authors = [a.get("name") for a in p.get("authors", []) if a.get("name")]
-                        results.append({
-                            "title": p.get("title"),
-                            "doi": doi.lower() if doi else None,
-                            "authors": authors,
-                            "year": p.get("year"),
-                            "venue": p.get("venue"),
-                            "abstract": p.get("abstract", ""),
-                            "is_retracted": p.get("isRetracted", False)
-                        })
-                    return results
-        except Exception:
-            pass
+        data_json = await self.client.get_json(url)
+        if data_json and "data" in data_json:
+            data = data_json["data"]
+            results = []
+            for p in data:
+                ext_ids = p.get("externalIds", {})
+                doi = ext_ids.get("DOI") or ext_ids.get("ArXiv")
+                authors = [a.get("name") for a in p.get("authors", []) if a.get("name")]
+                results.append({
+                    "title": p.get("title"),
+                    "doi": doi.lower() if doi else None,
+                    "authors": authors,
+                    "year": p.get("year"),
+                    "venue": p.get("venue"),
+                    "abstract": p.get("abstract", ""),
+                    "is_retracted": p.get("isRetracted", False)
+                })
+            return results
         return []
 
-    async def verify_citation(self, title: str, doi: Optional[str] = None, authors: Optional[list] = None, raw_text: Optional[str] = None) -> Dict[str, Any]:
+    async def verify_citation(
+        self,
+        title: str,
+        doi: Optional[str] = None,
+        authors: Optional[list] = None,
+        raw_text: Optional[str] = None
+    ) -> Dict[str, Any]:
         dummy_cit = Citation(
             id="cit_verify",
             raw_text=raw_text or title or "",
@@ -92,6 +98,7 @@ class ChineseAcademicProvider:
             authors=authors or []
         )
 
+        sem = self._get_semaphore()
         async with sem:
             try:
                 # Priority 1: Direct Online DOI Resolution (OpenAlex + Crossref)
@@ -128,7 +135,7 @@ class ChineseAcademicProvider:
                 # Priority 2: Online Multi-API Title Racing (OpenAlex, Semantic Scholar, Crossref)
                 core_title = self._extract_core_title(title)
                 query_str = core_title if (core_title and len(core_title) >= 5) else (title or doi or "")
-                
+
                 if query_str and len(query_str) >= 3:
                     # Launch API queries concurrently and process as they complete (First Qualified Winner)
                     async def fetch_openalex():

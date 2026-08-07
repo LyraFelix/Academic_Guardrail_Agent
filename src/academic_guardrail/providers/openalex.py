@@ -1,79 +1,51 @@
-"""OpenAlex API Provider with URL quote escaping and filter fallback."""
+"""OpenAlex API Provider with URL quote escaping, session reuse, and retry backoff."""
 
-import os
 import re
 import urllib.parse
-import httpx
-from typing import Optional, Dict, Any
-from academic_guardrail.core.exceptions import ProviderError, RateLimitError
+from typing import Optional, Dict, Any, List
+from academic_guardrail.providers.http_client import AcademicHttpClient
 
 
 class OpenAlexProvider:
-    """Async client for OpenAlex REST API."""
+    """Async client for OpenAlex REST API with session reuse and Polite Pool compliance."""
 
     BASE_URL = "https://api.openalex.org/works"
 
-    def __init__(self, email: Optional[str] = "academic-guardrail@example.com"):
-        self.headers = {"User-Agent": f"AcademicGuardrail/0.1.0 (mailto:{email})"}
+    def __init__(
+        self,
+        email: Optional[str] = "academic-guardrail@example.com",
+        client: Optional[AcademicHttpClient] = None
+    ):
+        self.email = email or "academic-guardrail@example.com"
+        self.client = client or AcademicHttpClient(email=self.email)
 
     async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
         clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
         quoted_doi = urllib.parse.quote(clean_doi, safe="")
-        url = f"{self.BASE_URL}/{quoted_doi}"  # Bug 1 fix: url was undefined
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-        client_kw = {"trust_env": True, "timeout": 12.0}
-        if proxy:
-            client_kw["proxy"] = proxy
+        url = f"{self.BASE_URL}/{quoted_doi}"
 
-        async with httpx.AsyncClient(**client_kw) as client:
-            try:
-                res = await client.get(url, headers=self.headers)
-                if res.status_code == 200:
-                    return self._process_work(res.json())
+        data = await self.client.get_json(url)
+        if data:
+            return self._process_work(data)
 
-                # Check for arXiv DOI format
-                arxiv_match = re.search(r'\d{4}\.\d{4,5}', clean_doi)
-                if arxiv_match:
-                    arxiv_id = arxiv_match.group(0)
-                    url_arxiv = f"{self.BASE_URL}?search={arxiv_id}&per_page=1"
-                    res_ax = await client.get(url_arxiv, headers=self.headers)
-                    if res_ax.status_code == 200:
-                        data_ax = res_ax.json()
-                        results = data_ax.get("results", [])
-                        if results:
-                            return self._process_work(results[0])
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    raise RateLimitError("OpenAlex API rate limit exceeded (HTTP 429)") from e
-                raise ProviderError(f"OpenAlex HTTP error: {e}") from e
-            except httpx.RequestError as e:
-                raise ProviderError(f"OpenAlex network error: {e}") from e
-            except Exception as e:
-                raise ProviderError(f"OpenAlex unexpected error: {e}") from e
+        # Check for arXiv DOI format fallback
+        arxiv_match = re.search(r'\d{4}\.\d{4,5}', clean_doi)
+        if arxiv_match:
+            arxiv_id = arxiv_match.group(0)
+            url_arxiv = f"{self.BASE_URL}?search={arxiv_id}&per_page=1"
+            data_ax = await self.client.get_json(url_arxiv)
+            if data_ax and data_ax.get("results"):
+                return self._process_work(data_ax["results"][0])
+
         return None
 
-    async def search_by_title(self, title: str, per_page: int = 5) -> list[Dict[str, Any]]:
+    async def search_by_title(self, title: str, per_page: int = 5) -> List[Dict[str, Any]]:
         clean_query = title.replace("[J]", "").replace("[M]", "").replace("[D]", "").replace("[C]", "").strip()
         url = f"{self.BASE_URL}?search={urllib.parse.quote(clean_query)}&per_page={per_page}"
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or os.environ.get("ALL_PROXY")
-        client_kw = {"trust_env": True, "timeout": 12.0}
-        if proxy:
-            client_kw["proxy"] = proxy
-        async with httpx.AsyncClient(**client_kw) as client:
-            try:
-                res = await client.get(url, headers=self.headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    results = data.get("results", [])
-                    return [self._process_work(item) for item in results]
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    raise RateLimitError("OpenAlex API rate limit exceeded (HTTP 429)") from e
-                return []
-            except Exception:
-                return []
+        data = await self.client.get_json(url)
+        if data and "results" in data:
+            return [self._process_work(item) for item in data["results"]]
         return []
-
 
     def _process_work(self, work: Dict[str, Any]) -> Dict[str, Any]:
         abstract = ""
@@ -94,7 +66,11 @@ class OpenAlexProvider:
         authorships = work.get("authorships", [])
         authors = [a.get("author", {}).get("display_name") for a in authorships if a.get("author")]
 
-        is_retracted = work.get("is_retracted", False) or ("retracted" in title.lower()) or (work.get("type") == "retraction-notice")
+        is_retracted = (
+            work.get("is_retracted", False)
+            or ("retracted" in title.lower())
+            or (work.get("type") == "retraction-notice")
+        )
 
         return {
             "title": title,
