@@ -15,6 +15,7 @@ class ReportGenerator:
 
     def generate_markdown(self, report: DocumentAuditReport) -> str:
         import os
+        md = []
         md.append(f"# 🛡️ 学术论文引用与断言审查报告 (Academic Guardrail Report)")
         md.append(f"**审计文件**: `{os.path.basename(report.document_path)}`")
         md.append(f"**引用总数**: {report.total_citations} | 🟢 合格: {report.passed_count} | 🟡 警告: {report.warning_count} | 🔴 高危: {report.danger_count}\n")

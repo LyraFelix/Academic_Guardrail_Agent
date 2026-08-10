@@ -19,6 +19,9 @@ CHINESE_CORE_JOURNALS = [
 ]
 
 
+from academic_guardrail.core.cache import get_cache, SqliteCache
+
+
 class ChineseAcademicProvider:
     """Matches Chinese citations using OpenAlex, Crossref, Semantic Scholar with proxy support, First-Completed racing, and CSSCI fallback."""
 
@@ -26,12 +29,14 @@ class ChineseAcademicProvider:
         self,
         email: Optional[str] = "academic-guardrail@example.com",
         client: Optional[AcademicHttpClient] = None,
-        max_concurrency: int = 5
+        max_concurrency: int = 5,
+        cache: Optional[SqliteCache] = None,
     ):
         self.email = email or "academic-guardrail@example.com"
         self.client = client or AcademicHttpClient(email=self.email)
-        self.openalex = OpenAlexProvider(email=self.email, client=self.client)
-        self.crossref = CrossrefProvider(email=self.email, client=self.client)
+        self.cache = cache or get_cache()
+        self.openalex = OpenAlexProvider(email=self.email, client=self.client, cache=self.cache)
+        self.crossref = CrossrefProvider(email=self.email, client=self.client, cache=self.cache)
         self.resolver = ReferenceResolver()
         self.max_concurrency = max_concurrency
         self._sem: Optional[asyncio.Semaphore] = None
@@ -59,6 +64,11 @@ class ChineseAcademicProvider:
         return title.strip()
 
     async def _search_semantic_scholar_candidates(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        cache_key = self.cache.make_key("s2_search", query.lower().strip(), str(limit))
+        cached_data = self.cache.get(cache_key)
+        if cached_data is not None:
+            return cached_data
+
         quoted_q = urllib.parse.quote(query)
         base_url = os.environ.get("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1")
         url = f"{base_url}/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
@@ -80,7 +90,9 @@ class ChineseAcademicProvider:
                     "abstract": p.get("abstract", ""),
                     "is_retracted": p.get("isRetracted", False)
                 })
+            self.cache.set(cache_key, results)
             return results
+        self.cache.set(cache_key, [])
         return []
 
     async def verify_citation(

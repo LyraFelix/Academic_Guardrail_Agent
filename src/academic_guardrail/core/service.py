@@ -47,7 +47,8 @@ class AuditService:
                 claim=claim,
                 status=VerificationStatus.UNVERIFIED,
                 risk_level=RiskLevel.WARNING,
-                message="🟡 请求超时：数据库查证已超过 15 秒限制"
+                reference_confidence=0.0,
+                message="🟡 请求超时：数据库查证已超过限制"
             )
         except RateLimitError as e:
             return VerificationResult(
@@ -55,6 +56,7 @@ class AuditService:
                 claim=claim,
                 status=VerificationStatus.UNVERIFIED,
                 risk_level=RiskLevel.WARNING,
+                reference_confidence=0.0,
                 message=f"🟡 触发 API 速率限制: {e}"
             )
         except ProviderError as e:
@@ -63,6 +65,7 @@ class AuditService:
                 claim=claim,
                 status=VerificationStatus.UNVERIFIED,
                 risk_level=RiskLevel.WARNING,
+                reference_confidence=0.0,
                 message=f"🟡 线上数据库检索失败: {e}"
             )
 
