@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-1.0.0-green.svg" alt="MCP Spec 1.0.0">
-  <img src="https://img.shields.io/badge/SciFact--Contradicts--F1-0.86-brightgreen.svg" alt="SciFact Contradicts F1 0.86">
+  <img src="https://img.shields.io/badge/SciFact--Official--F1-0.39-yellow.svg" alt="SciFact Official F1 0.39">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="License MIT">
 </p>
 
@@ -64,13 +64,14 @@ Report output to: report.html
 
 ## 🌟 Key Features
 
-1. **Hybrid Multilingual Claim Alignment (`MultilingualFeatureExtractor`)**:
+1. **Hybrid Multilingual Claim Alignment (`MultilingualFeatureExtractor` / `ClaimEvaluator`)**:
    - **Zero-Setup Cross-Lingual Matching**: Requires no pre-training or specialized domain dictionaries. Directly compares Chinese manuscript claims against English reference abstracts out of the box.
-   - **Algorithm Details**: Under the hood, combines Token Stemming, academic synonym normalization, and multilingual subword N-Gram feature matching.
-   - SciFact Gold Standard Benchmark Performance:
-     - **Contradiction Interception (`CONTRADICTS` Class)**: Precision = **1.00 (100%)**, Recall = 0.75, **F1-Score = 0.86**
-     - **Support Verification (`SUPPORTS` Class)**: Precision = 0.75, Recall = 0.61, **F1-Score = 0.67**
-     - *(Weighted Average F1 over full SciFact dataset = 0.77)*
+   - **Algorithm Details**: Under the hood, combines Token Stemming, academic synonym normalization, polarity antonym graph, and optional embedding representation.
+   - Real-world evaluation on **Allen AI SciFact Official Benchmark Dataset (Dev Set, N=323)** (run `python benchmark_scifact_official.py` to auto-fetch official S3 data):
+     - **Support Verification (`SUPPORTS` Class)**: Precision = 0.64, Recall = 0.45, **F1-Score = 0.53**
+     - **Contradiction Interception (`CONTRADICTS` Class)**: Precision = 0.30, Recall = 0.21, **F1-Score = 0.25**
+     - **Overall Accuracy**: **49.2%** (Macro F1 = 0.39)
+   - *(Note: `benchmark_large_scifact.py` is also provided for fast local synthetic demo regression testing)*
 2. **Claim Entailment Mechanism**:
    - The system extracts inline citation claims from the manuscript text.
    - Fetches abstract or full-text paragraphs from public APIs or local reference files, detects reversed conclusions and distorted claims by resolving polarity conflicts via a `Polarity Antonym Graph`, and pinpoints the exact matching sentence from the reference source text.

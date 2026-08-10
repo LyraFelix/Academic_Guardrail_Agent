@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-1.0.0-green.svg" alt="MCP Spec 1.0.0">
-  <img src="https://img.shields.io/badge/SciFact--Contradicts--F1-0.86-brightgreen.svg" alt="SciFact Contradicts F1 0.86">
+  <img src="https://img.shields.io/badge/SciFact--Official--F1-0.39-yellow.svg" alt="SciFact Official F1 0.39">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="License MIT">
 </p>
 
@@ -64,13 +64,14 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 
 ## 🌟 核心特性 (Key Features)
 
-1. **零样本多语言断言对齐算法 (`MultilingualFeatureExtractor`)**:
+1. **零样本多语言断言对齐算法 (`MultilingualFeatureExtractor` / `ClaimEvaluator`)**:
    - **零门槛跨语言处理**：本算法无需提前训练模型，也无需预置专业领域字典，能够直接跨语言比对中文正文断言与英文文献摘要的核心观点。
-   - **算法细节**：底层结合 Token 词干提取（Stemming）、学术近义词规范化与多语言 N-Gram 字符特征匹配。
-   - 在 Allen AI 权威 **SciFact 科学断言数据集** 上：
-     - **观点矛盾/倒置拦截 (`CONTRADICTS` 类别)**: Precision = **1.00 (100%)**, Recall = 0.75, **F1-Score = 0.86**
-     - **正向支持判定 (`SUPPORTS` 类别)**: Precision = 0.75, Recall = 0.61, **F1-Score = 0.67**
-     - *(全量集加权平均 Weighted Average F1 = 0.77)*
+   - **算法细节**：底层结合 Token 词干提取（Stemming）、学术近义词规范化、极性反义词树及可选的 Embedding 向量表示。
+   - 在 Allen AI 权威 **SciFact 科学断言官方数据集 (Dev Set, N=323)** 真实测试结果（执行 `python benchmark_scifact_official.py` 自动拉取 S3 官方包）：
+     - **正向支持判定 (`SUPPORTS` 类别)**: Precision = 0.64, Recall = 0.45, **F1-Score = 0.53**
+     - **观点矛盾/倒置拦截 (`CONTRADICTS` 类别)**: Precision = 0.30, Recall = 0.21, **F1-Score = 0.25**
+     - **总体匹配准确度 (Overall Accuracy)**: **49.2%** (Macro F1 = 0.39)
+   - *(注：项目另提供 `benchmark_large_scifact.py` 用于快速本地 Demo 功能回归验证)*
 2. **断言语义匹配工作原理**:
    - 系统首先反向回溯原稿正文，提取包含引用标记的上下文断言句。
    - 接着从公网数据库 API 或本地文献中提取 Abstract/全文，通过多维字符特征与反义极性树（`Polarity Antonym Graph`）检测结论倒置与观点曲解，并实时高亮定位**被引文献中的最吻合单句原文**。
