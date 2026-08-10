@@ -67,7 +67,7 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 1. **零样本多语言句级证据提取与推理架构 (`ClaimEvaluator` / MCP Server)**:
    - **零门槛跨语言处理**：无需提前训练模型，直接跨语言抽取正文断言，并在英文文献摘要中高亮精准单句原文（Sentence-Level Evidence Rationale）。
    - 在 Allen AI 权威 **SciFact 科学断言官方数据集 (Dev Set, N=323)** 真实基准实测结果：
-     - **MCP + 宿主 Coding Agent / LLM 模式**（执行 `python evaluate_llm_scifact_results.py`）：
+     - **MCP + 宿主 Agent / LLM 模式**（以 **Antigravity Agent (Gemini 3.6 Flash)** 为宿主模型实测，执行 `python evaluate_llm_scifact_results.py`）：
        - **正向支持判定 (`SUPPORTS` 类别)**: Precision = 1.00, Recall = 0.95, **F1-Score = 0.97**
        - **观点矛盾/倒置拦截 (`CONTRADICTS` 类别)**: Precision = 0.99, Recall = 0.97, **F1-Score = 0.98**
        - **总体匹配准确度 (Overall Accuracy)**: **97.2%** (Macro F1 = 0.98)

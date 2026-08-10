@@ -67,7 +67,7 @@ Report output to: report.html
 1. **Multilingual Sentence-Level Evidence Provisioning Architecture (`ClaimEvaluator` / MCP Server)**:
    - **Zero-Setup Cross-Lingual Evidence Extraction**: Directly extracts manuscript claims and pinpoints the exact matching sentence from English reference abstracts.
    - Real-world evaluation on **Allen AI SciFact Official Benchmark Dataset (Dev Set, N=323)**:
-     - **MCP + Host Coding Agent / LLM Mode** (run `python evaluate_llm_scifact_results.py`):
+     - **MCP + Host Agent / LLM Mode** (evaluated with **Antigravity Agent (Gemini 3.6 Flash)** as host model, run `python evaluate_llm_scifact_results.py`):
        - **Support Verification (`SUPPORTS` Class)**: Precision = 1.00, Recall = 0.95, **F1-Score = 0.97**
        - **Contradiction Interception (`CONTRADICTS` Class)**: Precision = 0.99, Recall = 0.97, **F1-Score = 0.98**
        - **Overall Accuracy**: **97.2%** (Macro F1 = 0.98)
