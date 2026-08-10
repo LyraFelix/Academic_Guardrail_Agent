@@ -1,8 +1,9 @@
-"""Crossref API Provider with session reuse, Polite Pool headers, and retry backoff."""
+"""Crossref API Provider with session reuse, Polite Pool headers, retry backoff, and SQLite cache."""
 
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from academic_guardrail.providers.http_client import AcademicHttpClient
+from academic_guardrail.core.cache import get_cache, SqliteCache
 
 
 class CrossrefProvider:
@@ -13,13 +14,22 @@ class CrossrefProvider:
     def __init__(
         self,
         email: Optional[str] = "academic-guardrail@example.com",
-        client: Optional[AcademicHttpClient] = None
+        client: Optional[AcademicHttpClient] = None,
+        cache: Optional[SqliteCache] = None,
     ):
         self.email = email or "academic-guardrail@example.com"
         self.client = client or AcademicHttpClient(email=self.email)
+        self.cache = cache or get_cache()
 
     async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
         clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
+
+        # --- Cache check ---
+        cache_key = self.cache.make_key("crossref_doi", clean_doi)
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         quoted_doi = urllib.parse.quote(clean_doi, safe="")
         url = f"{self.BASE_URL}/{quoted_doi}"
 
@@ -36,16 +46,24 @@ class CrossrefProvider:
             is_type_retracted = data.get("type") in ["retraction", "retraction-notice"]
             is_retracted = is_update_retracted or is_title_retracted or is_type_retracted
 
-            return {
+            result = {
                 "title": title,
                 "doi": clean_doi,
                 "publisher": data.get("publisher"),
                 "is_retracted": is_retracted,
                 "type": data.get("type")
             }
+            self.cache.set(cache_key, result)
+            return result
         return None
 
     async def search_by_title(self, query: str, rows: int = 5) -> List[Dict[str, Any]]:
+        # --- Cache check ---
+        cache_key = self.cache.make_key("crossref_title", query, str(rows))
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         quoted_q = urllib.parse.quote(query)
         url = f"{self.BASE_URL}?query.title={quoted_q}&rows={rows}"
         res_json = await self.client.get_json(url)
@@ -70,5 +88,6 @@ class CrossrefProvider:
                     "publisher": item.get("publisher"),
                     "is_retracted": False
                 })
+            self.cache.set(cache_key, results)
             return results
         return []

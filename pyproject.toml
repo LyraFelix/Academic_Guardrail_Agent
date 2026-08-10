@@ -27,6 +27,9 @@ dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0"
 ]
+full = [
+    "sentence-transformers>=2.2.0"
+]
 
 [project.scripts]
 academic-guardrail = "academic_guardrail.cli:main"

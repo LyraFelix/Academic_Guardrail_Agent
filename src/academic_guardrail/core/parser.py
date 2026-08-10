@@ -7,6 +7,9 @@ from academic_guardrail.core.models import Citation, ContextClaim
 from academic_guardrail.core.exceptions import ParserError
 
 DOI_REGEX = re.compile(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+')
+# Characters that must be stripped from the right end of a raw DOI match
+# to avoid sending trailing sentence punctuation to external APIs.
+_DOI_TRAIL_CHARS = ".,;:!?)]}>"
 GBT7714_HEAD_REGEX = re.compile(r'^\[(\d+)\]\s*(.+)')
 
 
@@ -121,9 +124,9 @@ class DocumentParser:
                 year_match = re.search(r'\b(19\d{2}|20\d{2})\b', content)
                 year = int(year_match.group(1)) if year_match else None
                 
-                # DOI Match
+                # DOI Match — strip trailing punctuation to prevent 404s
                 doi_match = DOI_REGEX.search(line_str)
-                doi = doi_match.group(0) if doi_match else None
+                doi = doi_match.group(0).rstrip(_DOI_TRAIL_CHARS) if doi_match else None
 
                 citation = Citation(
                     id=f"cit_{cite_num}",
@@ -156,10 +159,10 @@ class DocumentParser:
                 pairs.append((citation, claim))
                 continue
 
-            # 2. Standalone DOI Match
+            # 2. Standalone DOI Match — strip trailing punctuation to prevent 404s
             doi_match = DOI_REGEX.search(line_str)
             if doi_match and ("http" in line_str or "doi" in line_str.lower()):
-                doi = doi_match.group(0)
+                doi = doi_match.group(0).rstrip(_DOI_TRAIL_CHARS)
                 cid = f"cit_doi_{len(pairs)+1}"
                 citation = Citation(
                     id=cid,

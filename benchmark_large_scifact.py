@@ -1,7 +1,16 @@
-"""Large-Scale SciFact Entailment Benchmark Runner (100 Samples).
+"""Claim Entailment Demo Benchmark Runner (Hand-crafted 62-item Sample Set).
 
-Evaluates ClaimEvaluator over a 100-sample test suite to calculate 
-statistically confident Precision, Recall, F1-Score, and Confusion Matrix.
+⚠️  IMPORTANT: This is NOT the official SciFact test set.
+    The samples below were hand-crafted to exercise the ClaimEvaluator logic
+    across SUPPORTS / CONTRADICTS / NEUTRAL categories.  They intentionally
+    cover clear-cut polarity cases and are NOT a substitute for evaluation
+    against the Allen AI SciFact corpus (Wadden et al., 2020).
+
+    For reproducible academic benchmarking, use the official SciFact data:
+        https://github.com/allenai/scifact
+
+Evaluates ClaimEvaluator over the demo set to calculate
+Precision, Recall, F1-Score, and a Confusion Matrix.
 """
 
 import sys
@@ -21,8 +30,9 @@ from academic_guardrail.providers.claim_eval import ClaimEvaluator
 
 console = Console(force_terminal=True)
 
-# 100-sample Expanded SciFact Benchmark Test Suite
-LARGE_SCIFACT_DATASET = [
+# Hand-crafted demo samples covering SUPPORTS / CONTRADICTS / NEUTRAL categories.
+# These are NOT drawn from the official SciFact corpus.
+DEMO_DATASET = [
     # --- Category 1: SUPPORTS (40 Claims) ---
     {"claim": "Visual hallucinations occur in up to 60% of patients with Parkinson's disease.", "abstract": "Visual hallucinations occur in up to 60% of patients with Parkinson's disease.", "gold_label": "SUPPORTS"},
     {"claim": "MicroRNA-21 expression promotes cardiac fibrosis.", "abstract": "MicroRNA-21 is up-regulated in diseased heart tissue and stimulates fibroblasts.", "gold_label": "SUPPORTS"},
@@ -62,15 +72,16 @@ LARGE_SCIFACT_DATASET = [
     {"claim": "Solar energy reduces urban traffic congestion.", "abstract": "Photovoltaic cells convert sunlight directly into electric current.", "gold_label": "NEUTRAL"}
 ]
 
-# Expand dataset to 100 samples by duplicating with slight syntactic variations
+# Expand dataset to fill 100 slots by cycling over demo samples
 expanded = []
 for i in range(100):
-    item = LARGE_SCIFACT_DATASET[i % len(LARGE_SCIFACT_DATASET)]
+    item = DEMO_DATASET[i % len(DEMO_DATASET)]
     expanded.append(item)
 
 
 def run_large_benchmark():
-    console.print(f"[bold blue]🧪 启动大规模断言审查自动化检验 (Sample Size N = {len(expanded)})[/bold blue]\n")
+    console.print(f"[bold blue]🧪 启动断言审查 Demo 基准测试 (手写样本集, N = {len(expanded)})[/bold blue]\n")
+    console.print("[yellow]⚠️  注意: 当前使用手写演示样本集，非 Allen AI SciFact 官方数据集。[/yellow]\n")
     evaluator = ClaimEvaluator()
 
     tp_supports, fp_supports, fn_supports = 0, 0, 0

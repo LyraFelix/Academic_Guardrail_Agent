@@ -2,13 +2,22 @@
 
 import re
 import difflib
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     from sentence_transformers import SentenceTransformer, util
     _HAS_ST = True
 except ImportError:
     _HAS_ST = False
+    logger.warning(
+        "[academic_guardrail] sentence-transformers is NOT installed. "
+        "Semantic matching will fall back to rule-based cross-lingual alignment, "
+        "which is significantly weaker. "
+        "Install full feature set with:  pip install 'mcp-academic-guardrail[full]'"
+    )
 
 
 class SemanticMatcher:
