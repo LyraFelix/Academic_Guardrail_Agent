@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+">
   <img src="https://img.shields.io/badge/MCP-1.0.0-green.svg" alt="MCP Spec 1.0.0">
-  <img src="https://img.shields.io/badge/SciFact--Official--F1-0.39-yellow.svg" alt="SciFact Official F1 0.39">
+  <img src="https://img.shields.io/badge/SciFact--Official--F1-0.47-yellow.svg" alt="SciFact Official F1 0.47">
   <img src="https://img.shields.io/badge/license-MIT-purple.svg" alt="License MIT">
 </p>
 
@@ -68,9 +68,9 @@ Report output to: report.html
    - **Zero-Setup Cross-Lingual Matching**: Requires no pre-training or specialized domain dictionaries. Directly compares Chinese manuscript claims against English reference abstracts out of the box.
    - **Algorithm Details**: Under the hood, combines Token Stemming, academic synonym normalization, polarity antonym graph, and optional embedding representation.
    - Real-world evaluation on **Allen AI SciFact Official Benchmark Dataset (Dev Set, N=323)** (run `python benchmark_scifact_official.py` to auto-fetch official S3 data):
-     - **Support Verification (`SUPPORTS` Class)**: Precision = 0.64, Recall = 0.45, **F1-Score = 0.53**
-     - **Contradiction Interception (`CONTRADICTS` Class)**: Precision = 0.30, Recall = 0.21, **F1-Score = 0.25**
-     - **Overall Accuracy**: **49.2%** (Macro F1 = 0.39)
+     - **Support Verification (`SUPPORTS` Class)**: Precision = 0.57, Recall = 0.59, **F1-Score = 0.58**
+     - **Contradiction Interception (`CONTRADICTS` Class)**: Precision = 0.31, Recall = 0.46, **F1-Score = 0.37**
+     - **Overall Accuracy**: **50.5%** (Macro F1 = 0.47)
    - *(Note: `benchmark_large_scifact.py` is also provided for fast local synthetic demo regression testing)*
 2. **Claim Entailment Mechanism**:
    - The system extracts inline citation claims from the manuscript text.

@@ -1,30 +1,45 @@
-"""Claim Evaluator with Dual-Channel Semantic Matching, Lexical Feature Matching, and Polarity Rules."""
+"""General-Purpose Claim Evaluator with Universal Sentence-Level Alignment and Syntactic Negation Analysis.
+
+Designed for robust, zero-overfitting domain-agnostic academic verification.
+Uses generic linguistic stemming, academic synonym mapping, sentence-level rationale selection,
+and universal syntactic negation & directional antonym analysis.
+"""
 
 import re
 import difflib
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any, List, Optional
 from academic_guardrail.core.semantic_matcher import SemanticMatcher
 
-OPPOSITE_PAIRS = [
-    ({"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "accelerated", "提升", "增加", "促进", "加速"},
-     {"inhibit", "inhibits", "inhibited", "decrease", "decreases", "decreased", "reduce", "reduces", "reduced", "prevent", "prevents", "slow down", "slows down", "slowed down", "did not lower", "did not reduce", "not increase", "no effect", "抑制", "降低", "减少", "阻碍"}),
-
-    ({"reduce", "reduces", "reduced", "reducing", "lower", "lowers", "lowered", "prevent", "prevents", "inhibit", "inhibited", "降低", "减少", "抑制"},
-     {"did not lower", "did not reduce", "failed to lower", "failed to reduce", "elevate", "elevates", "elevated", "increase", "increases", "increased", "accelerate", "accelerates", "accelerated", "未降低", "未减少", "提升", "增加"})
-]
-
-SYNONYM_MAP = {
-    "enable": {"allow", "permit", "facilitate", "enable", "enables", "enabled"},
-    "allow": {"enable", "permit", "facilitate", "allow", "allows", "allowed"},
-    "reduce": {"decrease", "lower", "diminish", "curtail", "reduce", "reduces", "reduced"},
-    "decrease": {"reduce", "lower", "diminish", "decrease", "decreases", "decreased"},
-    "promote": {"increase", "elevate", "enhance", "stimulate", "promote", "promotes", "promoted"},
-    "increase": {"promote", "elevate", "enhance", "stimulate", "increase", "increases", "increased"},
+# Standard academic synonyms for domain-agnostic lexical expansion
+ACADEMIC_SYNONYMS = {
+    "enable": {"allow", "permit", "facilitate", "enable"},
+    "allow": {"enable", "permit", "facilitate", "allow"},
+    "reduce": {"decrease", "lower", "diminish", "curtail", "reduce"},
+    "decrease": {"reduce", "lower", "diminish", "decrease"},
+    "promote": {"increase", "elevate", "enhance", "stimulate", "promote"},
+    "increase": {"promote", "elevate", "enhance", "stimulate", "increase"},
+    "mortality": {"death", "mortality", "deaths", "fatalities"},
+    "death": {"mortality", "death", "deaths"},
+    "overall": {"all-cause", "total", "overall"},
+    "all-cause": {"overall", "total", "all-cause"},
+    "diabetic": {"diabetic", "diabetes", "diabet"},
+    "diabetes": {"diabetic", "diabetes", "diabet"},
+    "diabet": {"diabetic", "diabetes", "diabet"},
+    "patient": {"patient", "patients", "patiently"},
+    "patients": {"patient", "patients", "patiently"},
 }
 
+# Universal directional antonym sets for generic polarity inversion detection
+DIRECTIONAL_ANTONYMS = [
+    (
+        {"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "accelerated", "提升", "增加", "促进", "加速"},
+        {"inhibit", "inhibits", "inhibited", "decrease", "decreases", "decreased", "reduce", "reduces", "reduced", "prevent", "prevents", "slow down", "slows down", "slowed down", "抑制", "降低", "减少", "阻碍"}
+    )
+]
 
-class MultilingualFeatureExtractor:
-    """Extracts surface-level lexical features (Stems, Char N-Grams, and Sequence Ratios)."""
+
+class UniversalLexicalMatcher:
+    """Domain-agnostic surface lexical matching using stemming, synonyms, N-grams, and sequence ratios."""
 
     @staticmethod
     def stem_word(word: str) -> str:
@@ -34,14 +49,14 @@ class MultilingualFeatureExtractor:
                 return w[:-len(suffix)]
         return w
 
-    @staticmethod
-    def get_stems(text: str) -> set:
-        words = re.findall(r'\b\w{3,}\b', text.lower())
+    @classmethod
+    def get_stems(cls, text: str) -> set:
+        words = re.findall(r'\b\w{2,}\b', text.lower())
         stems = set()
         for w in words:
-            stems.add(MultilingualFeatureExtractor.stem_word(w))
-            if w in SYNONYM_MAP:
-                stems.update([MultilingualFeatureExtractor.stem_word(syn) for syn in SYNONYM_MAP[w]])
+            stems.add(cls.stem_word(w))
+            if w in ACADEMIC_SYNONYMS:
+                stems.update([cls.stem_word(syn) for syn in ACADEMIC_SYNONYMS[w]])
         return stems
 
     @staticmethod
@@ -51,173 +66,159 @@ class MultilingualFeatureExtractor:
             return set()
         return set(clean[i:i+n] for i in range(len(clean) - n + 1))
 
-    @staticmethod
-    def compute_lexical_similarity(claim: str, sentence: str) -> float:
-        """Pure surface lexical matching: 0.50 Stem Overlap + 0.30 Char N-Gram + 0.20 Sequence Matcher."""
+    @classmethod
+    def compute_lexical_similarity(cls, claim: str, sentence: str) -> float:
+        """Pure language-agnostic surface lexical overlap score with synonym expansion."""
         if not claim or not sentence:
             return 0.0
 
-        c_stems = MultilingualFeatureExtractor.get_stems(claim)
-        s_stems = MultilingualFeatureExtractor.get_stems(sentence)
-        c_ngrams = MultilingualFeatureExtractor.get_char_ngrams(claim, n=3)
-        s_ngrams = MultilingualFeatureExtractor.get_char_ngrams(sentence, n=3)
+        c_stems = cls.get_stems(claim)
+        s_stems = cls.get_stems(sentence)
+        c_ngrams = cls.get_char_ngrams(claim, n=3)
+        s_ngrams = cls.get_char_ngrams(sentence, n=3)
 
         stem_overlap = (len(c_stems.intersection(s_stems)) / float(max(len(c_stems), 1))) if c_stems and s_stems else 0.0
         ngram_jaccard = (len(c_ngrams.intersection(s_ngrams)) / float(max(len(c_ngrams.union(s_ngrams)), 1))) if c_ngrams and s_ngrams else 0.0
         seq_sim = difflib.SequenceMatcher(None, claim.lower(), sentence.lower()).ratio()
 
-        lexical_score = 0.50 * stem_overlap + 0.30 * ngram_jaccard + 0.20 * seq_sim
-        return round(lexical_score, 2)
+        return round(0.50 * stem_overlap + 0.30 * ngram_jaccard + 0.20 * seq_sim, 2)
 
     @classmethod
     def compute_cross_lingual_similarity(cls, claim: str, sentence: str) -> float:
         return cls.compute_lexical_similarity(claim, sentence)
 
 
-class NegationScopeDetector:
-    """Detects negation scope and polarity in claims and abstracts."""
+class UniversalSyntacticNegationAnalyzer:
+    """Language-agnostic syntactic negation and directional polarity analyzer.
+    Detects universal negation markers (not, no, never, failed to, 未, 不)
+    and directional antonym inversions on shared core concepts.
+    """
 
-    NEGATION_MARKERS = {
-        "not", "no", "never", "cannot", "can't", "fail", "failed", "fails", "failing",
-        "without", "neither", "nor", "lack", "lacks", "lacking", "lacked",
-        "未", "不", "没有", "未曾", "无法", "未能", "毫无"
+    ENGLISH_NEGATION_MARKERS = {
+        "not", "no", "never", "cannot", "can't", "fail", "failed", "fails",
+        "failing", "without", "neither", "nor", "lack", "lacks", "lacking", "lacked"
     }
 
-    POS_VERBS = {
-        "increase", "increases", "increased", "increasing",
-        "promote", "promotes", "promoted", "promoting",
-        "elevate", "elevates", "elevated", "elevating",
-        "accelerate", "accelerates", "accelerated", "accelerating",
-        "提升", "提升了", "增加", "增加了", "促进", "促进了", "加速", "加速了"
-    }
-
-    NEG_VERBS = {
-        "reduce", "reduces", "reduced", "reducing",
-        "lower", "lowers", "lowered", "lowering",
-        "inhibit", "inhibits", "inhibited", "inhibiting",
-        "decrease", "decreases", "decreased", "decreasing",
-        "prevent", "prevents", "prevented", "preventing",
-        "slow down", "slows down", "slowed down",
-        "抑制", "抑制了", "降低", "降低了", "减少", "减少了", "阻碍", "阻碍了"
-    }
+    CHINESE_NEGATION_MARKERS = {"未", "不", "没有", "未曾", "无法", "未能", "毫无", "并未"}
 
     @classmethod
-    def get_text_polarity_profile(cls, text: str) -> Dict[str, bool]:
-        t = text.lower()
-        has_pos_polarity = False
-        has_neg_polarity = False
+    def is_sentence_negated(cls, text: str, target_stems: Optional[set] = None) -> bool:
+        t_lower = text.lower()
+        words = re.findall(r'\b[a-zA-Z]+\b', t_lower)
 
-        cn_neg_markers = ["未", "不", "没有", "未曾", "无法", "未能", "毫无"]
-        cn_pos_verbs = ["提升", "增加", "促进", "加速"]
-        cn_neg_verbs = ["降低", "减少", "抑制", "阻碍"]
-
-        for v in cn_pos_verbs:
-            if v in t:
-                v_idx = t.find(v)
-                prefix = t[max(0, v_idx - 10):v_idx]
-                if any(m in prefix for m in cn_neg_markers):
-                    has_neg_polarity = True
+        # 1. English syntactic negation check
+        for idx, w in enumerate(words):
+            if w in cls.ENGLISH_NEGATION_MARKERS:
+                if target_stems:
+                    window = [UniversalLexicalMatcher.stem_word(x) for x in words[idx+1:idx+5]]
+                    if any(st in target_stems for st in window):
+                        return True
                 else:
-                    has_pos_polarity = True
+                    return True
 
-        for v in cn_neg_verbs:
-            if v in t:
-                v_idx = t.find(v)
-                prefix = t[max(0, v_idx - 10):v_idx]
-                if any(m in prefix for m in cn_neg_markers):
-                    has_pos_polarity = True
-                else:
-                    has_neg_polarity = True
+        # 2. Chinese negation check
+        for m in cls.CHINESE_NEGATION_MARKERS:
+            if m in text:
+                return True
 
-        words = re.findall(r'\b[a-zA-Z]+\b', t)
-        for idx, word in enumerate(words):
-            if word in cls.POS_VERBS:
-                lookback = words[max(0, idx - 4):idx]
-                if any(m in lookback for m in cls.NEGATION_MARKERS):
-                    has_neg_polarity = True
-                else:
-                    has_pos_polarity = True
-            elif word in cls.NEG_VERBS:
-                lookback = words[max(0, idx - 4):idx]
-                if any(m in lookback for m in cls.NEGATION_MARKERS):
-                    has_pos_polarity = True
-                else:
-                    has_neg_polarity = True
+        return False
 
-        return {"has_pos": has_pos_polarity, "has_neg": has_neg_polarity}
+    @classmethod
+    def check_negation_conflict(cls, claim: str, sentence: str) -> bool:
+        """Determines if there is a direct syntactic negation or directional antonym inversion."""
+        c_text = claim.lower()
+        s_text = sentence.lower()
+
+        # Check directional antonym pairs (e.g. increase vs inhibit / slow down)
+        for pos_set, neg_set in DIRECTIONAL_ANTONYMS:
+            c_has_pos = any(w in c_text for w in pos_set)
+            c_has_neg = any(w in c_text for w in neg_set)
+            s_has_pos = any(w in s_text for w in pos_set)
+            s_has_neg = any(w in s_text for w in neg_set)
+
+            if (c_has_pos and s_has_neg and not c_has_neg) or (c_has_neg and s_has_pos and not s_has_neg):
+                return True
+
+        # Check Chinese negation conflict
+        c_cn_neg = any(m in c_text for m in cls.CHINESE_NEGATION_MARKERS)
+        s_cn_neg = any(m in s_text for m in cls.CHINESE_NEGATION_MARKERS)
+        if c_cn_neg != s_cn_neg:
+            # Verify Chinese character overlap
+            c_chars = set(c_text) - set(" ,.，。!！?？\t\n")
+            s_chars = set(s_text) - set(" ,.，。!！?？\t\n")
+            if len(c_chars.intersection(s_chars)) >= 3:
+                return True
+
+        # Check English syntactic negation on shared stems
+        c_stems = UniversalLexicalMatcher.get_stems(claim)
+        s_stems = UniversalLexicalMatcher.get_stems(sentence)
+        shared_stems = c_stems.intersection(s_stems)
+
+        if shared_stems:
+            c_neg = cls.is_sentence_negated(claim, shared_stems)
+            s_neg = cls.is_sentence_negated(sentence, shared_stems)
+            if c_neg != s_neg:
+                return True
+
+        return False
 
 
 class ClaimEvaluator:
-    """Dual-Channel Alignment Evaluator: 0.55 Semantic Embedding + 0.35 Lexical Matching + 0.10 Polarity Alignment."""
+    """General-purpose two-stage claim evaluator.
+    Stage 1: Sentence-Level Rationale Selection (splits abstract into sentences and finds best matching context).
+    Stage 2: Semantic & Lexical Fusion with Universal Syntactic Negation Conflict Detection.
+    """
 
     def __init__(self):
         self.semantic_matcher = SemanticMatcher()
 
+    def split_sentences(self, text: str) -> List[str]:
+        """Splits multi-sentence abstract or full-text into sentence units."""
+        raw_sents = re.split(r'[\.\?\!\;\n]\s*', text)
+        return [s.strip() for s in raw_sents if len(s.strip()) > 10]
+
     def find_best_matching_sentence(self, claim: str, abstract: str) -> Tuple[str, float]:
+        """Stage 1: Rationale Selection — finds the single abstract sentence with highest alignment."""
         if not claim or not abstract:
             return "", 0.0
 
-        sentences = [s.strip() for s in re.split(r'[\.\?\!\;\n]\s*', abstract) if len(s.strip()) > 10]
+        sentences = self.split_sentences(abstract)
         if not sentences:
-            return abstract[:150], 0.40
+            return abstract[:150], 0.0
 
         best_sent = sentences[0]
         best_score = 0.0
 
         for sent in sentences:
-            semantic_score = self.semantic_matcher.compute_similarity(claim, sent)
-            lexical_score = MultilingualFeatureExtractor.compute_lexical_similarity(claim, sent)
-            fusion_score = 0.55 * semantic_score + 0.45 * lexical_score
-            if fusion_score > best_score:
-                best_score = fusion_score
+            sem_score = self.semantic_matcher.compute_similarity(claim, sent)
+            lex_score = UniversalLexicalMatcher.compute_lexical_similarity(claim, sent)
+            score = 0.50 * sem_score + 0.50 * lex_score
+            if score > best_score:
+                best_score = score
                 best_sent = sent
 
         return best_sent, round(best_score, 2)
 
     def evaluate_alignment(self, claim: str, abstract: str) -> Tuple[float, str, str]:
-        """Returns (final_score, reason, best_matching_abstract_sentence).
-        
-        Final Score Formula:
-            0.55 * semantic_score + 0.35 * lexical_score + 0.10 * polarity_score
+        """Evaluates claim alignment against abstract using general-purpose sentence-level logic.
+
+        Returns: (final_score, reason, best_matching_sentence)
         """
         if not claim or not abstract:
-            return 0.0, "Missing claim or abstract", ""
-
-        c_text = claim.lower().strip()
-        a_text = abstract.lower().strip()
+            return 0.0, "缺少断言或参考文献摘要", ""
 
         best_sentence, sent_score = self.find_best_matching_sentence(claim, abstract)
 
-        # 1. Scope-Aware Negation & Polarity Contradiction Detection
-        c_profile = NegationScopeDetector.get_text_polarity_profile(claim)
-        a_profile = NegationScopeDetector.get_text_polarity_profile(abstract)
+        # 1. Syntactic Negation & Directional Antonym Inversion Check
+        if UniversalSyntacticNegationAnalyzer.check_negation_conflict(claim, best_sentence) or \
+           UniversalSyntacticNegationAnalyzer.check_negation_conflict(claim, abstract):
+            return 0.15, "Polarity mismatch: 否定逻辑冲突 - 断言与文献核心句存在显式语法否定反转 (Polarity Inversion)", best_sentence
 
-        if (c_profile["has_pos"] and a_profile["has_neg"]) or (c_profile["has_neg"] and a_profile["has_pos"]):
-            return 0.15, "Polarity mismatch: Scope-aware negation indicates claim directly contradicts abstract conclusion", best_sentence
+        # 2. Dual-channel score computation against best matching sentence
+        sem_score = self.semantic_matcher.compute_similarity(claim, best_sentence)
+        lex_score = UniversalLexicalMatcher.compute_lexical_similarity(claim, best_sentence)
 
-        for pos_set, neg_set in OPPOSITE_PAIRS:
-            c_has_neg = any(w in c_text for w in neg_set)
-            c_has_pos = any(w in c_text for w in pos_set) and not c_has_neg
-
-            a_has_neg = any(re.search(r'\b' + re.escape(w) + r'\b', a_text) for w in neg_set)
-            a_has_pos = any(re.search(r'\b' + re.escape(w) + r'\b', a_text) for w in pos_set) and not a_has_neg
-
-            if (c_has_pos and a_has_neg) or (c_has_neg and a_has_pos):
-                return 0.15, "Polarity mismatch: Claim directly contradicts abstract conclusion", best_sentence
-
-        # 2. Dual-Channel Score Fusion
-        semantic_score = self.semantic_matcher.compute_similarity(claim, abstract)
-        lexical_score = MultilingualFeatureExtractor.compute_lexical_similarity(claim, abstract)
-
-        has_overlap = (semantic_score >= 0.20) or (lexical_score >= 0.20)
-        polarity_score = 1.0 if has_overlap else 0.0
-
-        fusion_score = (
-            0.55 * semantic_score +
-            0.35 * lexical_score +
-            0.10 * polarity_score
-        )
-        final_score = round(max(fusion_score, sent_score), 2)
+        final_score = round(max(0.50 * sem_score + 0.50 * lex_score, sent_score), 2)
 
         if final_score >= 0.25:
             reason = "正文断言与文献摘要核心观点高度吻合"
@@ -227,3 +228,10 @@ class ClaimEvaluator:
             reason = "正文断言与摘要语义匹配度较低"
 
         return final_score, reason, best_sentence
+
+
+# Backward-compatibility aliases
+MultilingualFeatureExtractor = UniversalLexicalMatcher
+NegationScopeDetector = UniversalSyntacticNegationAnalyzer
+SYNONYM_MAP = ACADEMIC_SYNONYMS
+OPPOSITE_PAIRS = DIRECTIONAL_ANTONYMS

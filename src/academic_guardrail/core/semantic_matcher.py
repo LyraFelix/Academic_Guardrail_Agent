@@ -81,7 +81,14 @@ class SemanticMatcher:
                 if claim_has and target_has:
                     concept_matches += 1
 
-        concept_score = (concept_matches / float(max(1, total_concepts))) if total_concepts > 0 else 0.0
+        if total_concepts > 0:
+            concept_score = concept_matches / float(total_concepts)
+            score = 0.70 * concept_score + 0.30 * raw_ratio
+        else:
+            # General domain fallback (token overlap + sequence ratio)
+            words_c = set(re.findall(r'\b\w{3,}\b', c))
+            words_t = set(re.findall(r'\b\w{3,}\b', t))
+            overlap = (len(words_c.intersection(words_t)) / float(max(len(words_c), 1))) if words_c and words_t else 0.0
+            score = 0.50 * overlap + 0.50 * raw_ratio
 
-        score = 0.70 * concept_score + 0.30 * raw_ratio
         return round(min(1.0, score), 2)
