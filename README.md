@@ -1,8 +1,8 @@
 # 🛡️ Academic Guardrail Agent (`mcp-academic-guardrail`)
 
 <p center="align">
-  <b>End-to-End Academic Citation & Claim Consistency Verification Agent (MCP Server & CLI)</b><br>
-  An open-source academic guardrail addressing <b>citation validity, retraction alerts, multilingual support, local reference extraction, and hybrid claim alignment (Claim vs Content Match)</b>.
+  <b>Citation Verification & Evidence Context Provisioning MCP Server & CLI for AI Coding Agents</b><br>
+  An open-source academic infrastructure providing <b>citation metadata validation, retraction alerts, multilingual database lookups, local reference extraction, and sentence-level evidence context provisioning</b>.
 </p>
 
 <p align="center">

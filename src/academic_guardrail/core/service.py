@@ -91,6 +91,7 @@ class AuditService:
             target_abstract = abstract or local_abstract
             score = None
 
+            best_sent = ""
             if not is_matched:
                 status = VerificationStatus.UNVERIFIED
                 risk = RiskLevel.WARNING
@@ -101,7 +102,7 @@ class AuditService:
                 status = VerificationStatus.VALID
                 risk = RiskLevel.PASS
                 nli_state = "NEUTRAL"
-                msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验并跳过断言比对。"
+                msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验。"
             else:
                 score, reason, best_sent = self.evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
                 context_str = f" [最匹配的原句: \"{best_sent[:120]}...\"]" if best_sent else ""
@@ -109,7 +110,7 @@ class AuditService:
                     status = VerificationStatus.CLAIM_MISMATCH
                     risk = RiskLevel.NOTICE
                     nli_state = "CONTRADICTED"
-                    msg = f"🔵 正文断言与{source_name}摘要语义匹配度较弱 ({score:.2f})。{reason}{context_str}"
+                    msg = f"🔵 正文断言与{source_name}摘要匹配度较弱 ({score:.2f})。{reason}{context_str}"
                 else:
                     status = VerificationStatus.VALID
                     risk = RiskLevel.PASS
@@ -123,7 +124,7 @@ class AuditService:
             risk_level=risk,
             verified_title=verify_res.get("title"),
             verified_doi=verify_res.get("doi"),
-            abstract_tldr=target_abstract or verify_res.get("abstract"),
+            abstract_tldr=best_sent or target_abstract or verify_res.get("abstract"),
             reference_confidence=ref_confidence,
             claim_alignment_score=score,
             nli_state=nli_state,

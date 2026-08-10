@@ -38,7 +38,9 @@ def handle_mcp_exceptions(func):
 @mcp.tool()
 @handle_mcp_exceptions
 async def verify_single_citation(citation_str_or_doi: str) -> str:
-    """验证单条文献引用的真实性、DOI 匹配及撤稿状态。"""
+    """验证单条文献引用的真实性、DOI 匹配及撤稿状态。
+    返回确定性的数据库元数据与检索结果，供 AI Agent 上下文直接评阅。
+    """
     is_doi = citation_str_or_doi.startswith("10.") or "doi.org" in citation_str_or_doi
     doi = citation_str_or_doi if is_doi else None
     title = citation_str_or_doi if not is_doi else ""
@@ -46,9 +48,20 @@ async def verify_single_citation(citation_str_or_doi: str) -> str:
     res = await provider.verify_citation(title=title, doi=doi)
 
     if res.get("is_retracted"):
-        return f"🔴 [DANGER/撤稿警示] 该论文已被撤稿或发出了学术质疑 (DOI: {res.get('doi')})"
+        return (
+            f"🔴 [DANGER/撤稿警示] 论文已被撤稿或发出学术预警！\n"
+            f"标题: 《{res.get('title')}》\n"
+            f"DOI: {res.get('doi')}\n"
+            f"状态: 严重合规风险"
+        )
     elif res.get("matched"):
-        return f"🟢 [PASS/验证通过] 匹配论文《{res.get('title')}》 (DOI: {res.get('doi')})"
+        abstract_snippet = res.get("abstract", "")[:200]
+        return (
+            f"🟢 [PASS/验证通过] 数据库成功查实匹配论文。\n"
+            f"标题: 《{res.get('title')}》\n"
+            f"DOI: {res.get('doi')}\n"
+            f"摘要片段: \"{abstract_snippet}...\""
+        )
     else:
         return f"🟡 [WARNING/未查证] 无法在数据库中核实该文献，请检查拼写或格式 (输入: {citation_str_or_doi})"
 
@@ -68,20 +81,36 @@ async def check_paper_retraction(doi: str) -> str:
 
 @mcp.tool()
 @handle_mcp_exceptions
-async def audit_document_claims(file_path: str) -> str:
-    """全面审计论文原稿（.pdf, .docx, .md, .tex），检查引用真实性与断言一致性。"""
-    report = await service.audit_document(file_path)
+async def audit_document_claims(file_path: str, refs_dir: str = "") -> str:
+    """全面审计论文原稿（.pdf, .docx, .md, .tex），抽取引用真实性、撤稿记录，
+    并提取正文断言与被引文献的精准单句原文，透传给 AI Agent 在对话中做对齐判定。
+    """
+    report = await service.audit_document(file_path, refs_dir=refs_dir if refs_dir else None)
 
     if report.total_citations == 0:
         return "ℹ️ 未在文档中识别出任何文献引用标记或 GB/T 7714 格式。"
 
     output_lines = [
-        f"📊 学术引用与断言审计总结报告: {report.document_path}",
-        f"总引用数: {report.total_citations} | 🟢 正常: {report.passed_count} | 🟡 警告: {report.warning_count} | 🔴 撤稿高危: {report.danger_count}\n"
+        f"📊 学术引用与原文对齐审计报告: {report.document_path}",
+        f"总引用数: {report.total_citations} | 🟢 正常/通过: {report.passed_count} | 🟡 未核实/提示: {report.warning_count} | 🔴 撤稿警示: {report.danger_count}\n",
+        "--- 提炼对齐明细 (请宿主 Agent 评阅正文断言与文献原文对齐情况) ---"
     ]
 
     for item in report.results:
-        output_lines.append(f"• [{item.citation.id}] {item.citation.raw_text[:50]}... => {item.message}")
+        cit = item.citation
+        claim_text = item.claim.claim_sentence if item.claim else "无"
+        evidence_text = item.abstract_tldr or "无摘要原文"
+
+        status_flag = "🔴 撤稿高危" if item.status == "RETRACTED" else ("🟢 已查实" if item.status == "VALID" else "🟡 未查核")
+        doi_str = f" | DOI: {item.verified_doi}" if item.verified_doi else ""
+
+        line_info = [
+            f"\n• [{cit.id}] {cit.raw_text[:60]}... ({status_flag}{doi_str})",
+            f"  └─ 正文断言: \"{claim_text}\"",
+            f"  └─ 文献单句原文: \"{evidence_text[:150]}...\"",
+            f"  └─ 数据库说明: {item.message}"
+        ]
+        output_lines.extend(line_info)
 
     return "\n".join(output_lines)
 

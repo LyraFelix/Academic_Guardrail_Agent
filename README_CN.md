@@ -1,8 +1,8 @@
 # 🛡️ Academic Guardrail Agent (`mcp-academic-guardrail`)
 
 <p center="align">
-  <b>全流程学术论文引用与断言一致性校验 Agent (MCP Server & CLI)</b><br>
-  解决 AI 学术写作中 <b>文献真伪、撤稿警示、中英文支持、本地原文库提取与零样本断言一致性 (Claim vs Content Match)</b> 的开源学术护栏。
+  <b>专为 AI Coding Agent / IDE 打造的学术论文引用真伪查验与句级原文提炼 MCP Server & CLI</b><br>
+  解决 AI 学术写作与论文审计中 <b>文献真实性、撤稿预警、中英文检索、本地原文抽取与句级证据提炼 (Sentence-Level Evidence Provisioning)</b> 的开源学术基础设施。
 </p>
 
 <p align="center">
