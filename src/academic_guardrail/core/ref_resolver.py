@@ -135,9 +135,11 @@ class ReferenceResolver:
 
     @classmethod
     def deduplicate_candidates(cls, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Deduplicates candidates across multi-provider sources using normalized DOI and canonical title matching."""
+        """Deduplicates candidates across multi-provider sources prioritizing DOI,
+        falling back to (normalized_title, first_author, year) matching.
+        """
         seen_dois = set()
-        seen_titles = set()
+        seen_keys = set()
         deduped = []
 
         for cand in candidates:
@@ -146,18 +148,34 @@ class ReferenceResolver:
 
             raw_doi = cand.get("doi")
             norm_doi = cls.normalize_doi(raw_doi)
-            norm_title = re.sub(r'\s+', ' ', (cand.get("title") or "").strip().lower())
 
             if norm_doi:
                 if norm_doi in seen_dois:
                     continue
                 seen_dois.add(norm_doi)
                 cand["doi"] = norm_doi
+                deduped.append(cand)
+                continue
 
-            if norm_title and len(norm_title) >= 10:
-                if norm_title in seen_titles:
+            # Fallback for candidates without DOI: deduplicate by (normalized title, first author, year)
+            raw_title = cand.get("title") or ""
+            norm_title = re.sub(r'[^\w\s]', '', raw_title.strip().lower())
+            norm_title = re.sub(r'\s+', ' ', norm_title)
+
+            authors_raw = cand.get("authors") or cand.get("author") or []
+            first_author = ""
+            if isinstance(authors_raw, list) and authors_raw:
+                first_author = str(authors_raw[0]).strip().lower()
+            elif isinstance(authors_raw, str) and authors_raw:
+                first_author = authors_raw.split(",")[0].strip().lower()
+
+            year = cand.get("year") or cand.get("publication_year") or ""
+
+            if norm_title and len(norm_title) >= 5:
+                combo_key = (norm_title, first_author, str(year))
+                if combo_key in seen_keys:
                     continue
-                seen_titles.add(norm_title)
+                seen_keys.add(combo_key)
 
             deduped.append(cand)
 

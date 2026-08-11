@@ -175,155 +175,102 @@ class ChineseAcademicProvider:
                             "source": "Crossref/OpenAlex (DOI)"
                         }
 
-                # Priority 2: Online Multi-API Title Racing (OpenAlex, Semantic Scholar, Crossref)
+                # Priority 2: Online Multi-API Title Search & Global Candidate Aggregation
                 core_title = self._extract_core_title(title)
                 query_str = core_title if (core_title and len(core_title) >= 5) else (title or doi or "")
 
                 if query_str and len(query_str) >= 3:
-                    # Launch API queries concurrently and process as they complete (First Qualified Winner)
                     async def fetch_openalex():
                         try:
                             cands = await asyncio.wait_for(self.openalex.search_by_title(query_str, per_page=5), timeout=15.0)
-                            best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
-                            if best and best.get("title"):
-                                return {
-                                    "matched": True,
-                                    "doi": best.get("doi"),
-                                    "title": best.get("title"),
-                                    "is_retracted": best.get("is_retracted", False),
-                                    "abstract": best.get("abstract", ""),
-                                    "confidence": round(best.get("match_score", 0.90), 2),
-                                    "match_confidence": best.get("match_confidence", "HIGH"),
-                                    "match_margin": best.get("match_margin", 1.0),
-                                    "resolution_metadata": best.get("resolution_metadata"),
-                                    "is_uncertain": best.get("is_uncertain", False),
-                                    "ambiguous_candidates": best.get("ambiguous_candidates"),
-                                    "source": "OpenAlex (Title Search)"
-                                }
+                            for c in cands:
+                                c["source"] = "OpenAlex"
+                            return cands
                         except (asyncio.TimeoutError, httpx.HTTPError, ProviderError) as e:
-                            logger.debug(f"[academic_guardrail] OpenAlex title search skipped (network/timeout): {e}")
+                            logger.debug(f"[academic_guardrail] OpenAlex title search skipped: {e}")
                         except Exception as e:
-                            logger.warning(f"[academic_guardrail] Unexpected exception during OpenAlex title search: {e}", exc_info=True)
-                        return None
+                            logger.warning(f"[academic_guardrail] OpenAlex title search error: {e}", exc_info=True)
+                        return []
 
                     async def fetch_s2():
                         try:
                             cands = await asyncio.wait_for(self._search_semantic_scholar_candidates(query_str, limit=5), timeout=15.0)
-                            best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
-                            if best and best.get("title"):
-                                return {
-                                    "matched": True,
-                                    "doi": best.get("doi"),
-                                    "title": best.get("title"),
-                                    "is_retracted": best.get("is_retracted", False),
-                                    "abstract": best.get("abstract", ""),
-                                    "confidence": round(best.get("match_score", 0.90), 2),
-                                    "match_confidence": best.get("match_confidence", "HIGH"),
-                                    "match_margin": best.get("match_margin", 1.0),
-                                    "resolution_metadata": best.get("resolution_metadata"),
-                                    "is_uncertain": best.get("is_uncertain", False),
-                                    "ambiguous_candidates": best.get("ambiguous_candidates"),
-                                    "source": "Semantic Scholar (Online Abstract)"
-                                }
+                            for c in cands:
+                                c["source"] = "Semantic Scholar"
+                            return cands
                         except (asyncio.TimeoutError, httpx.HTTPError, ProviderError) as e:
-                            logger.debug(f"[academic_guardrail] S2 title search skipped (network/timeout): {e}")
+                            logger.debug(f"[academic_guardrail] S2 title search skipped: {e}")
                         except Exception as e:
-                            logger.warning(f"[academic_guardrail] Unexpected exception during S2 title search: {e}", exc_info=True)
-                        return None
+                            logger.warning(f"[academic_guardrail] S2 title search error: {e}", exc_info=True)
+                        return []
 
                     async def fetch_crossref():
                         try:
                             cands = await asyncio.wait_for(self.crossref.search_by_title(query_str, rows=5), timeout=15.0)
-                            best = self.resolver.select_best_candidate(dummy_cit, cands, min_score=0.40)
-                            if best and best.get("doi"):
-                                found_doi = best.get("doi")
-                                abstract = ""
-                                if found_doi:
-                                    try:
-                                        o_res = await asyncio.wait_for(self.openalex.get_by_doi(found_doi), timeout=8.0)
-                                        if o_res and o_res.get("abstract"):
-                                            abstract = o_res.get("abstract")
-                                    except Exception as e:
-                                        logger.debug(f"[academic_guardrail] Crossref supplementary abstract fetch skipped: {e}")
-                                return {
-                                    "matched": True,
-                                    "doi": found_doi,
-                                    "title": best.get("title"),
-                                    "is_retracted": best.get("is_retracted", False),
-                                    "abstract": abstract,
-                                    "confidence": round(best.get("match_score", 0.85), 2),
-                                    "match_confidence": best.get("match_confidence", "HIGH"),
-                                    "match_margin": best.get("match_margin", 1.0),
-                                    "resolution_metadata": best.get("resolution_metadata"),
-                                    "is_uncertain": best.get("is_uncertain", False),
-                                    "ambiguous_candidates": best.get("ambiguous_candidates"),
-                                    "source": "Crossref (Online Title Search)"
-                                }
+                            for c in cands:
+                                c["source"] = "Crossref"
+                            return cands
                         except (asyncio.TimeoutError, httpx.HTTPError, ProviderError) as e:
-                            logger.debug(f"[academic_guardrail] Crossref title search skipped (network/timeout): {e}")
+                            logger.debug(f"[academic_guardrail] Crossref title search skipped: {e}")
                         except Exception as e:
-                            logger.warning(f"[academic_guardrail] Unexpected exception during Crossref title search: {e}", exc_info=True)
-                        return None
+                            logger.warning(f"[academic_guardrail] Crossref title search error: {e}", exc_info=True)
+                        return []
 
-                    # Multi-API Racing with High-Confidence Early Exit (>= 0.80) & Soft-Timeout Window (1.5s)
                     tasks = [
                         asyncio.create_task(fetch_openalex()),
                         asyncio.create_task(fetch_s2()),
                         asyncio.create_task(fetch_crossref())
                     ]
 
-                    best_result: Optional[Dict[str, Any]] = None
-                    soft_window_deadline: Optional[float] = None
-                    HIGH_CONFIDENCE_THRESHOLD = GuardrailConfig.REFERENCE_EARLY_EXIT_SCORE
-                    SOFT_WINDOW_SECONDS = 1.5
+                    # 1.5s Maximum Candidate Collection Window (returns immediately if all finish early)
+                    try:
+                        done, pending = await asyncio.wait(tasks, timeout=1.5)
+                    except Exception:
+                        done = set()
+                        pending = set(tasks)
 
-                    pending = set(tasks)
-                    while pending:
-                        now = asyncio.get_running_loop().time()
-                        timeout = None
-                        if soft_window_deadline is not None:
-                            remaining = soft_window_deadline - now
-                            if remaining <= 0:
-                                break
-                            timeout = remaining
+                    for p in pending:
+                        p.cancel()
 
+                    raw_candidates: List[Dict[str, Any]] = []
+                    for t in done:
                         try:
-                            done, pending = await asyncio.wait(
-                                pending,
-                                return_when=asyncio.FIRST_COMPLETED,
-                                timeout=timeout
-                            )
-                        except asyncio.TimeoutError:
-                            break
+                            cands = t.result()
+                            if cands and isinstance(cands, list):
+                                raw_candidates.extend(cands)
+                        except Exception:
+                            pass
 
-                        if not done:
-                            break
+                    if raw_candidates:
+                        best = self.resolver.select_best_candidate(dummy_cit, raw_candidates, min_score=0.40)
+                        if best and best.get("title"):
+                            found_doi = best.get("doi")
+                            abstract = best.get("abstract", "")
 
-                        for t in done:
-                            try:
-                                res = t.result()
-                                if res and res.get("matched"):
-                                    conf = res.get("confidence", 0.0)
-                                    if conf >= HIGH_CONFIDENCE_THRESHOLD:
-                                        # Immediate Early Exit for High-Confidence Match
-                                        for p in pending:
-                                            p.cancel()
-                                        return res
-                                    else:
-                                        # Medium-Confidence Candidate: track best and open 1.5s soft window
-                                        if best_result is None or conf > best_result.get("confidence", 0.0):
-                                            best_result = res
-                                        if soft_window_deadline is None:
-                                            soft_window_deadline = asyncio.get_running_loop().time() + SOFT_WINDOW_SECONDS
-                            except asyncio.CancelledError:
-                                pass
-                            except Exception as e:
-                                logger.warning(f"[academic_guardrail] Racing candidate task error: {e}", exc_info=True)
+                            # Supplementary abstract fetch if winning candidate lacks abstract but has a valid DOI
+                            if not abstract and found_doi:
+                                try:
+                                    o_res = await asyncio.wait_for(self.openalex.get_by_doi(found_doi), timeout=5.0)
+                                    if o_res and o_res.get("abstract"):
+                                        abstract = o_res.get("abstract")
+                                except Exception as e:
+                                    logger.debug(f"[academic_guardrail] Cross-provider supplementary abstract fetch skipped: {e}")
 
-                    if best_result:
-                        for p in pending:
-                            p.cancel()
-                        return best_result
+                            src_name = best.get("source", "Online Search")
+                            return {
+                                "matched": True,
+                                "doi": found_doi,
+                                "title": best.get("title"),
+                                "is_retracted": best.get("is_retracted", False),
+                                "abstract": abstract,
+                                "confidence": round(best.get("match_score", 0.90), 2),
+                                "match_confidence": best.get("match_confidence", "HIGH"),
+                                "match_margin": best.get("match_margin", 1.0),
+                                "resolution_metadata": best.get("resolution_metadata"),
+                                "is_uncertain": best.get("is_uncertain", False),
+                                "ambiguous_candidates": best.get("ambiguous_candidates"),
+                                "source": f"{src_name} (Global Rerank)"
+                            }
 
                 # Priority 3: CSSCI / CSCD Local Core Journal Name Heuristic (Neutral Unverified Tri-State Indicator)
                 search_corpus = f"{title} {raw_text or ''}"
