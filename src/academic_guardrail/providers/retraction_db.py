@@ -32,16 +32,16 @@ logger = logging.getLogger(__name__)
 KNOWN_RETRACTION_SEEDS: List[Dict[str, Any]] = [
     {
         # Hwang Woo-suk stem cell fraud — Science, 2005
-        # Retraction confirmed: https://doi.org/10.1126/science.1130952
-        "doi": "10.1126/science.1105459",
+        # Original DOI: 10.1126/science.1112286 | Retraction Notice DOI: 10.1126/science.1124926
+        "doi": "10.1126/science.1112286",
         "title": "Patient-Specific Embryonic Stem Cells Derived from Human SCNT Blastocysts",
-        "reason": "Data Fabrication — non-existent cell lines",
+        "reason": "Data Fabrication — non-existent patient-specific cell lines",
         "journal": "Science",
         "date": "2006-01-12"
     },
     {
         # Andrew Wakefield MMR-autism fraud — The Lancet, 1998
-        # Retraction confirmed: https://doi.org/10.1016/S0140-6736(10)60175-4
+        # Original DOI: 10.1016/S0140-6736(97)11096-0 | Retraction Notice DOI: 10.1016/S0140-6736(10)60175-4
         "doi": "10.1016/S0140-6736(97)11096-0",
         "title": "Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children",
         "reason": "Ethical violation & falsified autism-MMR vaccine link",
@@ -49,11 +49,11 @@ KNOWN_RETRACTION_SEEDS: List[Dict[str, Any]] = [
         "date": "2010-02-02"
     },
     {
-        # STAP cells — Nature, 2014
-        # Retraction confirmed: https://doi.org/10.1038/nature13514
-        "doi": "10.1038/nature13358",
+        # STAP cells (Haruko Obokata et al.) — Nature, 2014
+        # Original DOI: 10.1038/nature12968 | Retraction Notice DOI: 10.1038/nature13598
+        "doi": "10.1038/nature12968",
         "title": "Stimulus-triggered fate conversion of somatic cells into pluripotency",
-        "reason": "Data fabrication and image falsification",
+        "reason": "Data fabrication and image manipulation",
         "journal": "Nature",
         "date": "2014-07-02"
     },
