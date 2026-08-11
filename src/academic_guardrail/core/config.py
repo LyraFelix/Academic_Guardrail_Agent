@@ -14,7 +14,6 @@ class GuardrailConfig:
     REFERENCE_HIGH_MARGIN: float = 0.10           # Margin threshold for HIGH confidence match
     REFERENCE_MEDIUM_CONFIDENCE: float = 0.60     # Score threshold for MEDIUM confidence match
     REFERENCE_MEDIUM_MARGIN: float = 0.05         # Margin threshold for MEDIUM confidence match
-    REFERENCE_EARLY_EXIT_SCORE: float = 0.80      # Qualified winner racing early-exit score
     REFERENCE_TITLE_HARD_FLOOR: float = 0.30       # Minimum reliable title similarity floor
 
     # ── Claim Alignment & Polarity Thresholds ──
