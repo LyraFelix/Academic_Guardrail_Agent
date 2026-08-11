@@ -9,6 +9,7 @@ import re
 import difflib
 from typing import Tuple, Dict, Any, List, Optional
 from academic_guardrail.core.semantic_matcher import SemanticMatcher
+from academic_guardrail.core.config import GuardrailConfig
 
 # Standard academic synonyms for domain-agnostic lexical expansion
 ACADEMIC_SYNONYMS = {
@@ -91,7 +92,7 @@ class UniversalLexicalMatcher:
 class UniversalSyntacticNegationAnalyzer:
     """Language-agnostic syntactic negation and directional polarity analyzer.
     Detects universal negation markers (not, no, never, failed to, 未, 不)
-    and directional antonym inversions on shared core concepts.
+    and directional antonym inversions on shared core concepts at sub-clause level.
     """
 
     ENGLISH_NEGATION_MARKERS = {
@@ -100,6 +101,39 @@ class UniversalSyntacticNegationAnalyzer:
     }
 
     CHINESE_NEGATION_MARKERS = {"未", "不", "没有", "未曾", "无法", "未能", "毫无", "并未"}
+
+    CLAUSE_SPLIT_PATTERN = re.compile(
+        r'(?:[;,]|\b(?:although|however|but|while|whereas|despite|even though|in contrast)\b|虽然|但是|然而|尽管|但)',
+        re.IGNORECASE
+    )
+
+    @classmethod
+    def split_clauses(cls, text: str) -> List[str]:
+        """Splits complex compound sentences into sub-clauses for localized polarity scope analysis."""
+        if not text:
+            return []
+        raw_clauses = [c.strip() for c in cls.CLAUSE_SPLIT_PATTERN.split(text) if len(c.strip()) >= 3]
+        return raw_clauses if raw_clauses else [text]
+
+    @classmethod
+    def find_most_relevant_clause(cls, claim: str, sentence: str) -> str:
+        """Locates the single sub-clause in sentence with highest stem overlap to claim."""
+        clauses = cls.split_clauses(sentence)
+        if len(clauses) <= 1:
+            return sentence
+
+        c_stems = UniversalLexicalMatcher.get_stems(claim)
+        best_clause = clauses[0]
+        max_overlap = -1
+
+        for cl in clauses:
+            cl_stems = UniversalLexicalMatcher.get_stems(cl)
+            overlap = len(c_stems.intersection(cl_stems))
+            if overlap > max_overlap:
+                max_overlap = overlap
+                best_clause = cl
+
+        return best_clause
 
     @classmethod
     def is_sentence_negated(cls, text: str, target_stems: Optional[set] = None) -> bool:
@@ -125,9 +159,10 @@ class UniversalSyntacticNegationAnalyzer:
 
     @classmethod
     def check_negation_conflict(cls, claim: str, sentence: str) -> bool:
-        """Determines if there is a direct syntactic negation or directional antonym inversion."""
+        """Determines if there is a direct syntactic negation or directional antonym inversion at clause level."""
         c_text = claim.lower()
-        s_text = sentence.lower()
+        target_clause = cls.find_most_relevant_clause(claim, sentence)
+        s_text = target_clause.lower()
 
         # Check directional antonym pairs (e.g. increase vs inhibit / slow down)
         for pos_set, neg_set in DIRECTIONAL_ANTONYMS:
@@ -151,12 +186,12 @@ class UniversalSyntacticNegationAnalyzer:
 
         # Check English syntactic negation on shared stems
         c_stems = UniversalLexicalMatcher.get_stems(claim)
-        s_stems = UniversalLexicalMatcher.get_stems(sentence)
+        s_stems = UniversalLexicalMatcher.get_stems(target_clause)
         shared_stems = c_stems.intersection(s_stems)
 
         if shared_stems:
             c_neg = cls.is_sentence_negated(claim, shared_stems)
-            s_neg = cls.is_sentence_negated(sentence, shared_stems)
+            s_neg = cls.is_sentence_negated(target_clause, shared_stems)
             if c_neg != s_neg:
                 return True
 
@@ -173,9 +208,11 @@ class ClaimEvaluator:
         self.semantic_matcher = SemanticMatcher()
 
     def split_sentences(self, text: str) -> List[str]:
-        """Splits multi-sentence abstract or full-text into sentence units."""
-        raw_sents = re.split(r'[\.\?\!\;\n]\s*', text)
-        return [s.strip() for s in raw_sents if len(s.strip()) > 10]
+        """Splits multi-sentence abstract or full-text into sentence units (supports Chinese & English)."""
+        if not text:
+            return []
+        raw_sents = re.split(r'[。！？；.!?;\n]+\s*', text)
+        return [s.strip() for s in raw_sents if len(s.strip()) >= 4]
 
     def find_best_matching_sentence(self, claim: str, abstract: str) -> Tuple[str, float]:
         """Stage 1: Rationale Selection — finds the single abstract sentence with highest alignment."""
@@ -199,35 +236,42 @@ class ClaimEvaluator:
 
         return best_sent, round(best_score, 2)
 
-    def evaluate_alignment(self, claim: str, abstract: str) -> Tuple[float, str, str]:
+    def evaluate_alignment(self, claim: str, abstract: str) -> Tuple[float, str, str, str, str]:
         """Evaluates claim alignment against abstract using general-purpose sentence-level logic.
 
-        Returns: (final_score, reason, best_matching_sentence)
+        Returns: (final_score, reason, best_matching_sentence, alignment_state, alignment_engine)
         """
         if not claim or not abstract:
-            return 0.0, "缺少断言或参考文献摘要", ""
+            return 0.0, "缺少断言或参考文献摘要", "", "UNVERIFIED", "rule_lexical_fallback"
 
         best_sentence, sent_score = self.find_best_matching_sentence(claim, abstract)
+        sem_score, alignment_engine = self.semantic_matcher.compute_similarity_with_engine(claim, best_sentence)
 
         # 1. Syntactic Negation & Directional Antonym Inversion Check
         if UniversalSyntacticNegationAnalyzer.check_negation_conflict(claim, best_sentence) or \
            UniversalSyntacticNegationAnalyzer.check_negation_conflict(claim, abstract):
-            return 0.15, "Polarity mismatch: 否定逻辑冲突 - 断言与文献核心句存在显式语法否定反转 (Polarity Inversion)", best_sentence
+            return GuardrailConfig.POLARITY_CONTRADICTION_SCORE, "显式极性矛盾：断言与文献核心句存在语法否定或方向相反逻辑 (Polarity Inversion)", best_sentence, "CONTRADICTED", alignment_engine
 
         # 2. Dual-channel score computation against best matching sentence
-        sem_score = self.semantic_matcher.compute_similarity(claim, best_sentence)
         lex_score = UniversalLexicalMatcher.compute_lexical_similarity(claim, best_sentence)
 
-        final_score = round(max(0.50 * sem_score + 0.50 * lex_score, sent_score), 2)
-
-        if final_score >= 0.25:
-            reason = "正文断言与文献摘要核心观点高度吻合"
-        elif final_score >= 0.15:
-            reason = "断言与摘要部分重合，建议人工核对"
+        # Cross-lingual script handling: do not penalize semantic score if lexical overlap is 0 due to script differences
+        if sem_score >= 0.35 and lex_score < 0.10:
+            final_score = round(max(sem_score, sent_score), 2)
         else:
-            reason = "正文断言与摘要语义匹配度较低"
+            final_score = round(max(0.50 * sem_score + 0.50 * lex_score, sent_score), 2)
 
-        return final_score, reason, best_sentence
+        if final_score >= GuardrailConfig.STRONG_ALIGNMENT_THRESHOLD:
+            reason = "正文断言与文献摘要呈现极高语义与词汇重合 (High Alignment)"
+            alignment_state = "SUPPORTED"
+        elif final_score >= GuardrailConfig.WEAK_ALIGNMENT_THRESHOLD:
+            reason = "正文断言与文献摘要呈现中度相关（仅背景或部分吻合）"
+            alignment_state = "PARTIAL"
+        else:
+            reason = "正文断言未在文献摘要中找到直接因果证据支持"
+            alignment_state = "NEUTRAL"
+
+        return final_score, reason, best_sentence, alignment_state, alignment_engine
 
 
 # Backward-compatibility aliases

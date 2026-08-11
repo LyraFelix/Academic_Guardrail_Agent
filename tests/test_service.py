@@ -33,3 +33,27 @@ class TestAuditService:
         assert len(report.results) == 1
         assert report.results[0].citation.id == "cit_1"
         assert report.results[0].reference_confidence is not None
+
+    def test_audit_single_item_retracted(self, service):
+        from unittest.mock import AsyncMock, patch
+        from academic_guardrail.core.models import Citation, ContextClaim, VerificationStatus
+
+        cit = Citation(id="cit_retracted", raw_text="[1] Retracted Author. Retracted Study[J]. 2020.", title="Retracted Study", doi="10.1016/j.cell.2006.02.001")
+        claim = ContextClaim(citation_id="cit_retracted", claim_sentence="The study claims significant progress.", surrounding_context="")
+
+        mock_res = {
+            "matched": True,
+            "title": "Retracted Study",
+            "doi": "10.1016/j.cell.2006.02.001",
+            "is_retracted": True,
+            "confidence": 1.0
+        }
+
+        with patch.object(service.provider, "verify_citation", AsyncMock(return_value=mock_res)):
+            res = asyncio.run(service.verify_single_item(cit, claim))
+
+        assert res.status == VerificationStatus.RETRACTED
+        assert res.risk_level == RiskLevel.DANGER
+        assert res.alignment_state is None
+        assert res.nli_state is None
+        assert "撤稿" in res.message

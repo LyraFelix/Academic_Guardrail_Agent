@@ -23,13 +23,14 @@ class AcademicHttpClient:
 
     def __init__(
         self,
-        email: Optional[str] = "academic-guardrail@example.com",
+        email: Optional[str] = None,
         timeout: float = 12.0,
         max_retries: int = 3,
         max_connections: int = 50,
         max_keepalive_connections: int = 20
     ):
-        self.email = email or "academic-guardrail@example.com"
+        from academic_guardrail.core.config import GuardrailConfig
+        self.email = email or os.environ.get("ACADEMIC_GUARDRAIL_EMAIL") or GuardrailConfig.DEFAULT_EMAIL
         self.timeout = timeout
         self.max_retries = max_retries
         self.user_agent = f"AcademicGuardrail/0.1.0 (mailto:{self.email})"

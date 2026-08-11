@@ -56,10 +56,14 @@ async def verify_single_citation(citation_str_or_doi: str) -> str:
         )
     elif res.get("matched"):
         abstract_snippet = res.get("abstract", "")[:200]
+        conf_val = res.get("confidence", 0.0)
+        res_meta = res.get("resolution_metadata") or {}
+        meta_info = f"\n消歧分解: Title: {res_meta.get('title_score', 'N/A')}, Author: {res_meta.get('author_score', 'N/A')}, Margin: {res_meta.get('rank_margin', 'N/A')}" if res_meta else ""
         return (
             f"🟢 [PASS/验证通过] 数据库成功查实匹配论文。\n"
             f"标题: 《{res.get('title')}》\n"
             f"DOI: {res.get('doi')}\n"
+            f"Reference Confidence: {conf_val:.2f}{meta_info}\n"
             f"摘要片段: \"{abstract_snippet}...\""
         )
     else:
@@ -92,7 +96,7 @@ async def audit_document_claims(file_path: str, refs_dir: str = "") -> str:
 
     output_lines = [
         f"📊 学术引用与原文对齐审计报告: {report.document_path}",
-        f"总引用数: {report.total_citations} | 🟢 正常/通过: {report.passed_count} | 🟡 未核实/提示: {report.warning_count} | 🔴 撤稿警示: {report.danger_count}\n",
+        f"总引用数: {report.total_citations} | 🟢 吻合通过: {report.passed_count} | 🔵 补充提示: {report.notice_count} | 🟡 未查核警告: {report.warning_count} | 🔴 撤稿高危: {report.danger_count}\n",
         "--- 提炼对齐明细 (请宿主 Agent 评阅正文断言与文献原文对齐情况) ---"
     ]
 
@@ -103,11 +107,19 @@ async def audit_document_claims(file_path: str, refs_dir: str = "") -> str:
 
         status_flag = "🔴 撤稿高危" if item.status == "RETRACTED" else ("🟢 已查实" if item.status == "VALID" else "🟡 未查核")
         doi_str = f" | DOI: {item.verified_doi}" if item.verified_doi else ""
+        
+        ref_conf_str = f"{item.reference_confidence:.2f}" if item.reference_confidence is not None else "N/A"
+        align_score_str = f"{item.claim_alignment_score:.2f}" if item.claim_alignment_score is not None else "N/A"
+        align_state_str = item.alignment_state or "UNVERIFIED"
+        engine_str = f" ({item.alignment_engine})" if item.alignment_engine else ""
 
         line_info = [
             f"\n• [{cit.id}] {cit.raw_text[:60]}... ({status_flag}{doi_str})",
-            f"  └─ 正文断言: \"{claim_text}\"",
-            f"  └─ 文献单句原文: \"{evidence_text[:150]}...\"",
+            f"  ├─ Reference Confidence: {ref_conf_str}",
+            f"  ├─ Claim Alignment Score: {align_score_str}{engine_str}",
+            f"  ├─ Alignment State: {align_state_str}",
+            f"  ├─ 正文断言: \"{claim_text}\"",
+            f"  ├─ 文献单句原文: \"{evidence_text[:150]}...\"",
             f"  └─ 数据库说明: {item.message}"
         ]
         output_lines.extend(line_info)

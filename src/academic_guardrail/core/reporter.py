@@ -91,6 +91,35 @@ class ReportGenerator:
                 </div>
                 '''
 
+            amb_box = ""
+            if r.ambiguous_candidates:
+                amb_rows = []
+                for c in r.ambiguous_candidates:
+                    c_title = html.escape(c.get("title", ""))
+                    c_doi = f'<a href="https://doi.org/{c["doi"]}" target="_blank" class="meta-link">{html.escape(c["doi"])}</a>' if c.get("doi") else "无 DOI"
+                    c_score = f'{c.get("score", 0.0):.2f}'
+                    c_src = html.escape(c.get("source", ""))
+                    amb_rows.append(f'<tr><td style="padding:4px;">{c_title}</td><td style="padding:4px;">{c_doi}</td><td style="padding:4px;"><code>{c_score}</code></td><td style="padding:4px;">{c_src}</td></tr>')
+                amb_table = "\n".join(amb_rows)
+                amb_box = f'''
+                <div class="ambiguous-candidates-box" style="margin-top:12px; background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.3); border-radius:8px; padding:12px;">
+                    <div style="font-weight:600; color:#facc15; margin-bottom:8px; font-size:13px;">⚠️ 检测到以下极相似冲突文献 (得分差值 < 5%)：</div>
+                    <table style="width:100%; font-size:12px; border-collapse:collapse; color:#cbd5e1;">
+                        <thead>
+                            <tr style="text-align:left; border-bottom:1px solid rgba(255,255,255,0.1);">
+                                <th style="padding:4px;">候选标题</th>
+                                <th style="padding:4px;">DOI</th>
+                                <th style="padding:4px;">匹配得分</th>
+                                <th style="padding:4px;">数据来源</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {amb_table}
+                        </tbody>
+                    </table>
+                </div>
+                '''
+
             card = f'''
             <div class="citation-card card-{risk_type}" data-risk="{risk_type}" data-search="{html.escape(title.lower())}">
                 <div class="card-header">
@@ -102,7 +131,8 @@ class ReportGenerator:
                     <span class="meta-item">🏷️ 状态：<code>{html.escape(r.status.value)}</code></span>
                     {doi_link}
                 </div>
-                <div class="card-msg">{html.escape(r.message)}</div>
+                <div class="card-msg" style="white-space: pre-wrap;">{html.escape(r.message)}</div>
+                {amb_box}
                 {claim_box}
                 {tldr_box}
             </div>
@@ -137,11 +167,11 @@ class ReportGenerator:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🛡️ 学术引用与断言审查报告 - Academic Guardrail</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <title>🛡️ 学术引用与断言审查报告 - Academic Guardrail</title>
     <style>
         :root {{
+            --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
             --bg-color: #0b0f19;
             --card-bg: rgba(20, 27, 45, 0.75);
             --card-hover: rgba(30, 41, 69, 0.85);
@@ -174,7 +204,7 @@ class ReportGenerator:
 
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: var(--font-main);
             background-color: var(--bg-color);
             background-image: 
                 radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
@@ -241,7 +271,7 @@ class ReportGenerator:
         /* Summary Dashboard Cards */
         .summary-grid {{
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 16px;
             margin-bottom: 28px;
         }}
@@ -506,15 +536,19 @@ class ReportGenerator:
             </div>
             <div class="stat-card sc-pass">
                 <div class="stat-num c-pass">{report.passed_count}</div>
-                <div class="stat-label">合格 (PASS)</div>
+                <div class="stat-label">严格吻合 (PASS)</div>
+            </div>
+            <div class="stat-card sc-notice">
+                <div class="stat-num c-notice">{report.notice_count}</div>
+                <div class="stat-label">补充证据 (NOTICE)</div>
             </div>
             <div class="stat-card sc-warning">
                 <div class="stat-num c-warning">{report.warning_count}</div>
-                <div class="stat-label">警告 (WARNING)</div>
+                <div class="stat-label">未查证 (WARNING)</div>
             </div>
             <div class="stat-card sc-danger">
                 <div class="stat-num c-danger">{report.danger_count}</div>
-                <div class="stat-label">高危 (DANGER)</div>
+                <div class="stat-label">撤稿/矛盾 (DANGER)</div>
             </div>
         </section>
 
@@ -523,7 +557,7 @@ class ReportGenerator:
             <div class="filter-tabs">
                 <button class="filter-btn active" onclick="filterRisk('all', this)">全部 ({report.total_citations})</button>
                 <button class="filter-btn" onclick="filterRisk('pass', this)">🟢 合格 ({report.passed_count})</button>
-                <button class="filter-btn" onclick="filterRisk('notice', this)">🔵 提示</button>
+                <button class="filter-btn" onclick="filterRisk('notice', this)">🔵 提示 ({report.notice_count})</button>
                 <button class="filter-btn" onclick="filterRisk('warning', this)">🟡 警告 ({report.warning_count})</button>
                 <button class="filter-btn" onclick="filterRisk('danger', this)">🔴 高危 ({report.danger_count})</button>
             </div>

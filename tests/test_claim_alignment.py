@@ -59,91 +59,104 @@ class TestClaimEvaluator:
 
     # ── SUPPORTS cases ──
     def test_supports_identical(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "Visual hallucinations occur in 60% of Parkinson's patients.",
             "Visual hallucinations occur in up to 60% of patients with Parkinson's disease."
         )
+        score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
         assert score >= 0.25
+        assert alignment_state in ("SUPPORTED", "PARTIAL")
         assert "Polarity mismatch" not in reason
 
     def test_supports_paraphrase(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "STING activation stimulates type I interferon production.",
             "Activation of the STING pathway induces robust type I interferon responses."
         )
+        score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
         assert score >= 0.25
+        assert alignment_state in ("SUPPORTED", "PARTIAL")
 
     # ── CONTRADICTS cases ──
     def test_contradicts_increase_vs_inhibit(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "AMPK activation directly increases cancer cell proliferation.",
             "AMPK activation inhibits cell proliferation in multiple cancer cell lines."
         )
-        assert "Polarity mismatch" in reason
+        score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
+        assert alignment_state == "CONTRADICTED"
         assert score <= 0.20
 
     def test_negation_scope_does_not_significantly_increase(self, evaluator):
         """Adverbial inserted negation 'does not significantly increase' should be recognized as negative polarity."""
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "The proposed method significantly increases classification accuracy.",
             "Experimental results demonstrate that the method does not significantly increase accuracy."
         )
-        assert "Polarity mismatch" in reason
+        assert res[3] == "CONTRADICTED"
 
     def test_negation_scope_failed_to_markedly_lower(self, evaluator):
         """Scope-aware negation 'failed to markedly lower' should invert lower (negative) into positive retention."""
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "Treatment significantly lowers serum cholesterol levels.",
             "Clinical trials showed that the treatment failed to markedly lower serum cholesterol."
         )
-        assert "Polarity mismatch" in reason
+        assert res[3] == "CONTRADICTED"
 
     def test_negation_scope_chinese_adverb(self, evaluator):
         """Chinese negation scope '未显著提升' should be recognized as negative polarity."""
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "该方案显著提升了企业生产效率",
             "实证分析表明，该方案未显著提升企业生产效率"
         )
-        assert "Polarity mismatch" in reason
+        assert res[3] == "CONTRADICTED"
 
     def test_contradicts_reduce_vs_did_not_lower(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "Vitamin D supplementation reduces total cardiovascular events.",
             "Randomized trial showed Vitamin D did not lower cardiovascular risk."
         )
-        assert "Polarity mismatch" in reason
+        assert res[3] == "CONTRADICTED"
 
     def test_contradicts_elevate_vs_not_increase(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "Statins significantly elevate blood pressure in hypertensive patients.",
             "Statins do not increase blood pressure and slightly attenuate hypertension."
         )
-        assert "Polarity mismatch" in reason
+        assert res[3] == "CONTRADICTED"
 
     def test_contradicts_accelerate_vs_slow_down(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "Calorie restriction accelerates cellular aging process.",
             "Caloric restriction slows down biological aging and extends lifespan."
         )
-        assert "Polarity mismatch" in reason
+        assert res[3] == "CONTRADICTED"
+
+    def test_clause_level_polarity_isolation(self, evaluator):
+        """Negation in an irrelevant sub-clause ('did not improve accuracy') should not invert positive claim on another sub-clause."""
+        claim = "The proposed algorithm significantly reduces training time."
+        ref_sentence = "Although the model did not improve accuracy, it significantly reduced training time across all benchmark tasks."
+        res = evaluator.evaluate_alignment(claim, ref_sentence)
+        assert res[3] != "CONTRADICTED"
+        assert res[3] in ("SUPPORTED", "PARTIAL")
 
     # ── NEUTRAL cases ──
     def test_neutral_unrelated_topics(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment(
+        res = evaluator.evaluate_alignment(
             "Quantum computing improves natural language processing.",
             "Deep learning models require large GPU memory during training."
         )
-        assert score < 0.25
-        assert "Polarity mismatch" not in reason
+        assert res[0] < 0.25
+        assert res[3] == "NEUTRAL"
 
     # ── Edge cases ──
     def test_empty_claim(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment("", "Some abstract text here.")
-        assert score == 0.0
+        res = evaluator.evaluate_alignment("", "Some abstract text here.")
+        assert res[0] == 0.0
 
     def test_empty_abstract(self, evaluator):
-        score, reason, _ = evaluator.evaluate_alignment("Some claim.", "")
-        assert score == 0.0
+        res = evaluator.evaluate_alignment("Some claim.", "")
+        assert res[0] == 0.0
 
     # ── Sentence-level matching ──
     def test_find_best_matching_sentence(self, evaluator):

@@ -40,7 +40,10 @@ def test_sentence_locator_and_antonym_contradiction():
     # 2. Test Polarity Antonym Contradiction Detection
     bad_claim = "The proposed method failed to lower structural unemployment"
     good_abstract = "The proposed algorithm significantly reduced structural unemployment across all sectors."
-    score, reason, best_s = evaluator.evaluate_alignment(bad_claim, good_abstract)
+    res = evaluator.evaluate_alignment(bad_claim, good_abstract)
+    score, reason, best_s, alignment_state, alignment_engine = res[0], res[1], res[2], res[3], res[4]
 
     assert score <= 0.15
-    assert "Polarity" in reason or "不匹配" in reason
+    assert alignment_state == "CONTRADICTED"
+    assert alignment_engine in ("vector_embedding", "rule_lexical_fallback")
+    assert "极性" in reason or "Polarity" in reason or "不匹配" in reason

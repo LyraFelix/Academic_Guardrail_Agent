@@ -21,13 +21,27 @@ def test_chinese_academic_provider_doi():
     assert len(res.get("title", "")) > 0
 
 
+def test_chinese_core_journal_heuristic_unverified():
+    import asyncio
+    provider = ChineseAcademicProvider()
+    fake_citation = "王某某. 一个完全虚构的论文. 管理世界, 2023."
+    with patch.object(provider.openalex, "search_by_title", AsyncMock(return_value=[])), \
+         patch.object(provider.crossref, "search_by_title", AsyncMock(return_value=[])):
+        res = asyncio.run(provider.verify_citation(title="一个完全虚构的论文", raw_text=fake_citation))
+
+    assert res["matched"] is None
+    assert res["confidence"] == 0.40
+    assert res["evidence_status"] == "JOURNAL_MATCHED_ARTICLE_UNVERIFIED"
+    assert "启发式" in res["source"]
+
 
 def test_claim_evaluator():
     evaluator = ClaimEvaluator()
     claim = "深度残差网络能够解决深层神经网络的梯度消失与退化问题"
     abstract = "Deep residual networks make it easier to train substantially deeper networks and address degradation problems."
     
-    score, reason, best_sentence = evaluator.evaluate_alignment(claim, abstract)
+    res = evaluator.evaluate_alignment(claim, abstract)
+    score, reason, best_sentence = res[0], res[1], res[2]
     assert 0.0 <= score <= 1.0
     assert len(reason) > 0
     assert len(best_sentence) > 0

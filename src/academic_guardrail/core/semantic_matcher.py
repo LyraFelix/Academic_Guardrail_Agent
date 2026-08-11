@@ -3,7 +3,7 @@
 import re
 import difflib
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +13,9 @@ try:
 except ImportError:
     _HAS_ST = False
     logger.warning(
-        "[academic_guardrail] sentence-transformers is NOT installed. "
-        "Semantic matching will fall back to rule-based cross-lingual alignment, "
-        "which is significantly weaker. "
-        "Install full feature set with:  pip install 'mcp-academic-guardrail[full]'"
+        "[academic_guardrail] sentence-transformers is NOT installed (Core Mode active). "
+        "Semantic matching fallback to lightweight rule-based lexical alignment. "
+        "To enable full multilingual embeddings, run: pip install 'academic-guardrail[full]'"
     )
 
 
@@ -31,13 +30,23 @@ class SemanticMatcher:
         if _HAS_ST and self._model is None:
             try:
                 self._model = SentenceTransformer(self.model_name)
-            except Exception:
+                logger.info(f"[academic_guardrail] Successfully loaded vector embedding model: '{self.model_name}'")
+            except Exception as e:
                 self._model = False
+                logger.warning(
+                    f"[academic_guardrail] Failed to load SentenceTransformer model '{self.model_name}' ({type(e).__name__}: {e}). "
+                    "Falling back to rule-based lexical alignment engine."
+                )
         return self._model if self._model else None
 
     def compute_similarity(self, text_a: str, text_b: str) -> float:
+        score, _ = self.compute_similarity_with_engine(text_a, text_b)
+        return score
+
+    def compute_similarity_with_engine(self, text_a: str, text_b: str) -> Tuple[float, str]:
+        """Computes similarity score and returns (score, alignment_engine_name)."""
         if not text_a or not text_b:
-            return 0.0
+            return 0.0, "rule_lexical_fallback"
 
         model = self._get_model()
         if model:
@@ -45,12 +54,15 @@ class SemanticMatcher:
                 emb_a = model.encode(text_a, convert_to_tensor=True)
                 emb_b = model.encode(text_b, convert_to_tensor=True)
                 sim = float(util.cos_sim(emb_a, emb_b)[0][0])
-                return round(max(0.0, min(1.0, sim)), 2)
-            except Exception:
-                pass
+                return round(max(0.0, min(1.0, sim)), 2), "vector_embedding"
+            except Exception as e:
+                logger.warning(
+                    f"[academic_guardrail] Vector encoding computation failed ({type(e).__name__}: {e}). "
+                    "Falling back to rule-based lexical alignment engine."
+                )
 
         # Fallback Engine: Cross-Lingual Concept & Keyphrase Density Alignment
-        return self._fallback_cross_lingual_similarity(text_a, text_b)
+        return self._fallback_cross_lingual_similarity(text_a, text_b), "rule_lexical_fallback"
 
     def _fallback_cross_lingual_similarity(self, claim: str, target: str) -> float:
         """Rule-based cross-lingual concept mapping fallback when sentence-transformers is absent."""

@@ -1,7 +1,7 @@
 """Data models for academic citations, claims, and verification results."""
 
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -48,14 +48,23 @@ class VerificationResult(BaseModel):
     abstract_tldr: Optional[str] = None
     reference_confidence: Optional[float] = None  # 0.0 ~ 1.0 文献元数据匹配置信度
     claim_alignment_score: Optional[float] = None  # 0.0 ~ 1.0 语义对齐得分
-    nli_state: Optional[str] = None  # "ENTAILED" | "CONTRADICTED" | "NEUTRAL" | "UNVERIFIED"
+    alignment_state: Optional[str] = None  # "SUPPORTED" | "PARTIAL" | "NEUTRAL" | "CONTRADICTED" | "UNVERIFIED"
+    alignment_engine: Optional[str] = None  # "vector_embedding" | "rule_lexical_fallback"
+    resolution_metadata: Optional[Dict[str, Any]] = None  # 详细匹配打分分解 (title_score, author_score, etc.)
+    ambiguous_candidates: Optional[List[Dict[str, Any]]] = None  # 歧义文献候选对比列表
     message: str                          # 详细说明/修复指引
+
+    @property
+    def nli_state(self) -> Optional[str]:
+        """Backward compatibility alias for alignment_state."""
+        return self.alignment_state
 
 
 class DocumentAuditReport(BaseModel):
     document_path: str
     total_citations: int
     passed_count: int
+    notice_count: int = 0
     warning_count: int
     danger_count: int
     results: List[VerificationResult]

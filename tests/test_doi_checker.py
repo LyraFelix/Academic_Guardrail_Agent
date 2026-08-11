@@ -38,3 +38,31 @@ def test_valid_doi_resolution():
         ))
     assert res["matched"] is True
     assert res["is_retracted"] is False
+    assert "resolution_metadata" in res
+    assert res["resolution_metadata"]["resolver"] == "global_rerank"
+    assert "title_score" in res["resolution_metadata"]
+    assert "author_score" in res["resolution_metadata"]
+
+
+def test_doi_normalization_and_deduplication():
+    from academic_guardrail.core.ref_resolver import ReferenceResolver
+    assert ReferenceResolver.normalize_doi("HTTPS://DOI.ORG/10.1016/j.cell.2020.01.001") == "10.1016/j.cell.2020.01.001"
+    assert ReferenceResolver.normalize_doi("doi: 10.1016/j.cell.2020.01.001") == "10.1016/j.cell.2020.01.001"
+
+    candidates = [
+        {"title": "Sample Paper", "doi": "https://doi.org/10.1016/j.cell.2020.01.001"},
+        {"title": "Sample Paper", "doi": "10.1016/J.CELL.2020.01.001"},
+    ]
+    deduped = ReferenceResolver.deduplicate_candidates(candidates)
+    assert len(deduped) == 1
+    assert deduped[0]["doi"] == "10.1016/j.cell.2020.01.001"
+
+
+def test_offline_retraction_db_direct():
+    from academic_guardrail.providers.retraction_db import OfflineRetractionDB
+    db = OfflineRetractionDB()
+    hit = db.check_doi("10.1016/j.cell.2006.02.001")
+    assert hit is not None
+    assert hit["is_retracted"] is True
+    assert hit["source"] == "Offline Retraction Watch Index"
+    db.close()

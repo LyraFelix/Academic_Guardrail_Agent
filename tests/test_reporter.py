@@ -25,6 +25,7 @@ def sample_report():
         document_path="paper.docx",
         total_citations=1,
         passed_count=1,
+        notice_count=0,
         warning_count=0,
         danger_count=0,
         results=[res]

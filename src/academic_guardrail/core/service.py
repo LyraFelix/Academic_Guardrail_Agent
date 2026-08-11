@@ -12,6 +12,7 @@ from academic_guardrail.core.exceptions import (
 )
 from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
+from academic_guardrail.core.config import GuardrailConfig
 
 
 class AuditService:
@@ -73,13 +74,29 @@ class AuditService:
             status = VerificationStatus.RETRACTED
             risk = RiskLevel.DANGER
             ref_confidence = verify_res.get("confidence", 1.0)
-            nli_state = "CONTRADICTED"
-            msg = "🔴 论文存在撤稿记录，存在严重学术合规风险！"
+            alignment_state = None
+            msg = f"🔴 撤稿高危：文献《{verify_res.get('title', '')}》存在撤稿或预警记录 (Retracted Paper)，存在严重学术诚信风险！"
+            return VerificationResult(
+                citation=cit,
+                claim=claim,
+                status=status,
+                risk_level=risk,
+                verified_title=verify_res.get("title"),
+                verified_doi=verify_res.get("doi"),
+                abstract_tldr=verify_res.get("abstract"),
+                reference_confidence=ref_confidence,
+                alignment_state=alignment_state,
+                message=msg
+            )
         else:
             abstract = verify_res.get("abstract", "")
             source_name = verify_res.get("source", "权威数据库")
             is_matched = verify_res.get("matched", False)
+            is_uncertain = verify_res.get("is_uncertain", False) or verify_res.get("match_confidence") == "UNCERTAIN"
             ref_confidence = verify_res.get("confidence", 0.0) if is_matched else 0.0
+
+            if is_uncertain:
+                is_matched = False
 
             # Fallback to local reference file if unverified or online abstract is missing
             local_abstract = None
@@ -95,30 +112,66 @@ class AuditService:
             score = None
 
             best_sent = ""
-            if not is_matched:
+            alignment_state = None
+            alignment_engine = None
+            amb_list = verify_res.get("ambiguous_candidates")
+            margin_val = verify_res.get("match_margin", 0.0)
+
+            evidence_status = verify_res.get("evidence_status")
+
+            if is_uncertain:
+                status = VerificationStatus.UNVERIFIED
+                risk = RiskLevel.WARNING
+                ref_confidence = verify_res.get("confidence", 0.0)
+                alignment_state = "UNCERTAIN"
+                compare_lines = []
+                if amb_list:
+                    for idx, c in enumerate(amb_list, 1):
+                        doi_info = f" (DOI: {c['doi']})" if c.get('doi') else ""
+                        compare_lines.append(f"  [{idx}] 《{c.get('title', '')}》{doi_info} [匹配得分: {c.get('score', 0.0):.2f}, 来源: {c.get('source', '')}]")
+                details_str = "\n".join(compare_lines) if compare_lines else "  暂无双候选数据"
+                msg = (
+                    f"🟡 存在匹配歧义：检索到多篇极其相似的相关候选文献（首选得分 {ref_confidence:.2f}，差值 {margin_val:.2f} < 5%）：\n"
+                    f"{details_str}\n"
+                    f"系统无法确定唯一精准目标，请在手稿中显式标识 DOI 或补全文献标题以消除歧义。"
+                )
+            elif evidence_status == "JOURNAL_MATCHED_ARTICLE_UNVERIFIED":
+                status = VerificationStatus.UNVERIFIED
+                risk = RiskLevel.NOTICE
+                ref_confidence = verify_res.get("confidence", 0.40)
+                alignment_state = "UNVERIFIED"
+                msg = verify_res.get("message", "🔵 期刊在录待查：检测到文章引自中文核心期刊，具体文章尚未核实。")
+            elif not is_matched:
                 status = VerificationStatus.UNVERIFIED
                 risk = RiskLevel.WARNING
                 ref_confidence = 0.0
-                nli_state = "UNVERIFIED"
+                alignment_state = "UNVERIFIED"
                 msg = "🟡 数据库未核实该文献，请检查拼写或手工确认。"
             elif not target_abstract:
                 status = VerificationStatus.VALID
                 risk = RiskLevel.PASS
-                nli_state = "NEUTRAL"
+                alignment_state = "NEUTRAL"
                 msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验。"
             else:
-                score, reason, best_sent = self.evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
+                score, reason, best_sent, alignment_state, alignment_engine = self.evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
                 context_str = f" [最匹配的原句: \"{best_sent[:120]}...\"]" if best_sent else ""
-                if score < 0.35:
+
+                if alignment_state == "CONTRADICTED":
+                    status = VerificationStatus.CLAIM_MISMATCH
+                    risk = RiskLevel.DANGER
+                    msg = f"🔴 显式极性矛盾：文献核心结论与正文断言存在语法否定或相反逻辑 ({score:.2f})。{reason}{context_str}"
+                elif alignment_state == "NEUTRAL":
                     status = VerificationStatus.CLAIM_MISMATCH
                     risk = RiskLevel.NOTICE
-                    nli_state = "CONTRADICTED"
-                    msg = f"🔵 正文断言与{source_name}摘要匹配度较弱 ({score:.2f})。{reason}{context_str}"
-                else:
+                    msg = f"🔵 缺乏直接依据：文献摘要未直接提供支持该特定结论的因果证据 ({score:.2f})。{reason}{context_str}"
+                elif alignment_state == "PARTIAL":
+                    status = VerificationStatus.CLAIM_MISMATCH
+                    risk = RiskLevel.NOTICE
+                    msg = f"🟡 部分对齐：正文断言与文献摘要呈现中度相关（仅背景或部分吻合）({score:.2f})。{reason}{context_str}"
+                else: # SUPPORTED
                     status = VerificationStatus.VALID
                     risk = RiskLevel.PASS
-                    nli_state = "ENTAILED"
-                    msg = f"🟢 正文断言与{source_name}摘要核心观点高度吻合 ({score:.2f})。{reason}{context_str}"
+                    msg = f"🟢 高度一致：正文断言与文献摘要呈现高相关对齐 ({score:.2f})。{reason}{context_str}"
 
         return VerificationResult(
             citation=cit,
@@ -130,7 +183,10 @@ class AuditService:
             abstract_tldr=best_sent or target_abstract or verify_res.get("abstract"),
             reference_confidence=ref_confidence,
             claim_alignment_score=score,
-            nli_state=nli_state,
+            alignment_state=alignment_state,
+            alignment_engine=alignment_engine,
+            resolution_metadata=verify_res.get("resolution_metadata"),
+            ambiguous_candidates=verify_res.get("ambiguous_candidates") if is_uncertain else None,
             message=msg
         )
 
@@ -148,6 +204,7 @@ class AuditService:
                 document_path=file_path,
                 total_citations=0,
                 passed_count=0,
+                notice_count=0,
                 warning_count=0,
                 danger_count=0,
                 results=[]
@@ -161,7 +218,8 @@ class AuditService:
 
         results = await asyncio.gather(*[_bounded_verify(cit, claim) for cit, claim in pairs])
 
-        passed = sum(1 for r in results if r.risk_level in [RiskLevel.PASS, RiskLevel.NOTICE])
+        passed = sum(1 for r in results if r.risk_level == RiskLevel.PASS)
+        notice = sum(1 for r in results if r.risk_level == RiskLevel.NOTICE)
         warning = sum(1 for r in results if r.risk_level == RiskLevel.WARNING)
         danger = sum(1 for r in results if r.risk_level == RiskLevel.DANGER)
 
@@ -169,6 +227,7 @@ class AuditService:
             document_path=file_path,
             total_citations=len(pairs),
             passed_count=passed,
+            notice_count=notice,
             warning_count=warning,
             danger_count=danger,
             results=results

@@ -26,8 +26,10 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-# Pytest / Coverage
+# Pytest / Coverage / Caches
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .coverage
 .coverage.*
 htmlcov/
@@ -45,6 +47,9 @@ env/
 *.swp
 *.swo
 
-# Project specific generated output reports
+# Project specific generated output reports and caches
 *.html
 *.log
+*.db
+*.sqlite3
+guardrail_cache.db

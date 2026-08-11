@@ -86,6 +86,7 @@ def run_offline_benchmark():
     console.print(f"- **内存占用 Peak**: < 80 MB")
 
     # Clean up test db
+    db.close()
     if os.path.exists(db_path):
         os.remove(db_path)
 
