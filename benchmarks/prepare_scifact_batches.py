@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from benchmark_scifact_official import ensure_scifact_data
+from benchmarks.benchmark_scifact_official import ensure_scifact_data
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
 
 claims_dev, corpus = ensure_scifact_data()

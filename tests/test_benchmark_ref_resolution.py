@@ -1,6 +1,6 @@
 """Unit tests for Reference Resolution Benchmark suite."""
 
-from benchmark_reference_resolution import RESOLUTION_GOLD_DATASET
+from benchmarks.benchmark_reference_resolution import RESOLUTION_GOLD_DATASET
 from academic_guardrail.core.ref_resolver import ReferenceResolver
 
 

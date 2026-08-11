@@ -67,16 +67,16 @@ Report output to: report.html
 1. **Multilingual Sentence-Level Evidence Provisioning Architecture (`ClaimEvaluator` / MCP Server)**:
    - **Zero-Setup Cross-Lingual Evidence Extraction**: Directly extracts manuscript claims and pinpoints the exact matching sentence from English reference abstracts.
    - **Disclosed Evaluation Protocol on Official SciFact Dataset**:
-     - **Host-Agent Evaluation (MCP + Host LLM Mode)** (evaluated with **Antigravity Agent (Gemini 3.6 Flash)** as host model, run `python evaluate_llm_scifact_results.py`):
+     - **Host-Agent Evaluation (MCP + Host LLM Mode)** (evaluated with **Antigravity Agent (Gemini 3.6 Flash)** as host model, run `python benchmarks/evaluate_llm_scifact_results.py`):
        - **Official SciFact Dev Set ($N=323$)**:
          - **Support Verification (`SUPPORTS` Class)**: Precision = 1.00, Recall = 0.95, **F1-Score = 0.97**
          - **Contradiction Interception (`CONTRADICTS` Class)**: Precision = 0.99, Recall = 0.97, **F1-Score = 0.98**
          - **Overall Joint Accuracy**: **97.2%** (Macro F1 = 0.98)
-     - **Standalone Python Engine (Zero-LLM Core Mode)** (run `python benchmark_scifact_official.py`, deterministic no-model CPU mode):
+     - **Standalone Python Engine (Zero-LLM Core Mode)** (run `python benchmarks/benchmark_scifact_official.py`, deterministic no-model CPU mode):
        - **Official SciFact Dev Set ($N=323$)**: Overall Accuracy = **50.5%** (Macro F1 = 0.47)
 2. **Two-Stage Decoupled Verification & Entity Resolution Benchmark**:
    - **Stage 1: Reference Entity Resolution (`ReferenceResolver`)**: Normalizes DOIs (`normalize_doi`), performs cross-provider candidate deduplication, and calculates 5-score breakdown metadata (`resolution_metadata` containing `title_score`, `author_score`, `year_score`, `venue_score`, `rank_margin`).
-     - **Resolution Benchmark (`python benchmark_reference_resolution.py`)**: Evaluated on an 8-case deterministic regression suite ($N=8$: 5 positive matches, 3 ambiguous/hallucinated abstentions), achieving **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, and **100.00% Abstention Accuracy** on ambiguous/hallucinated citations.
+     - **Resolution Benchmark (`python benchmarks/benchmark_reference_resolution.py`)**: Evaluated on an 8-case deterministic regression suite ($N=8$: 5 positive matches, 3 ambiguous/hallucinated abstentions), achieving **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, and **100.00% Abstention Accuracy** on ambiguous/hallucinated citations.
    - **Stage 2: Clause-Level Alignment & Polarity Conflict Detection (`ClaimEvaluator`)**: Evaluates claims into calibrated objective tiers (`SUPPORTED`, `PARTIAL`, `NEUTRAL`, `CONTRADICTED`, `UNVERIFIED`) using localized sub-clause segmentation (`split_clauses`) to eliminate false contradiction alerts on complex compound sentences.
 3. **Sentence-Level Context Locator & Multi-Format Parsing (`Sentence-Level Locator & arXiv Parser`)**:
    - Automatically splits abstracts/full-text into sentences and highlights the exact single sentence in the reference paper that best corresponds to the manuscript claim.
@@ -169,8 +169,8 @@ export ACADEMIC_GUARDRAIL_EMAIL="researcher@university.edu"
 
 ### 1. Benchmark Datasets & Scope Disclosures
 For **100% transparency and academic rigor**, we distinguish between benchmark datasets:
-- **Official SciFact Dev Set ($N=323$)**: Used for official full-scale dataset evaluation (`benchmark_scifact_official.py` & `evaluate_llm_scifact_results.py`).
-- **Local Micro Baseline Subset ($N=12$)**: Used for quick local component execution latency and baseline comparisons (`benchmark_baselines.py`).
+- **Official SciFact Dev Set ($N=323$)**: Used for official full-scale dataset evaluation (`benchmarks/benchmark_scifact_official.py` & `benchmarks/evaluate_llm_scifact_results.py`).
+- **Local Micro Baseline Subset ($N=12$)**: Used for quick local component execution latency and baseline comparisons (`benchmarks/benchmark_baselines.py`).
 
 All benchmarks are executed under a standard consumer CPU environment:
 - **CPU**: Intel Core / AMD Ryzen (16 vCPU)
@@ -194,7 +194,7 @@ We evaluated `Academic Guardrail` against standard lexical baseline methods on t
 
 Run the full baseline comparison script from the project root:
 ```bash
-python benchmark_baselines.py
+python benchmarks/benchmark_baselines.py
 ```
 
 ---

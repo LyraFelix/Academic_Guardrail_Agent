@@ -67,16 +67,16 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 1. **零样本多语言句级证据提取与推理架构 (`ClaimEvaluator` / MCP Server)**:
    - **零门槛跨语言处理**：无需提前训练模型，直接跨语言抽取正文断言，并在英文文献摘要中高亮精准单句原文（Sentence-Level Evidence Rationale）。
    - **Allen AI 官方 SciFact 科学断言数据集 (Dev Set, N=323) 完整实测与分层披露**:
-     - **MCP + 宿主 Agent / LLM 模式**（以 **Antigravity Agent (Gemini 3.6 Flash)** 为宿主模型实测，执行 `python evaluate_llm_scifact_results.py`）：
+     - **MCP + 宿主 Agent / LLM 模式**（以 **Antigravity Agent (Gemini 3.6 Flash)** 为宿主模型实测，执行 `python benchmarks/evaluate_llm_scifact_results.py`）：
        - **官方 SciFact Dev 集 ($N=323$)**:
          - **正向支持判定 (`SUPPORTS` 类别)**: Precision = 1.00, Recall = 0.95, **F1-Score = 0.97**
          - **观点矛盾/倒置拦截 (`CONTRADICTS` 类别)**: Precision = 0.99, Recall = 0.97, **F1-Score = 0.98**
          - **总体联合准确率 (Overall Accuracy)**: **97.2%** (Macro F1 = 0.98)
-     - **纯 Python 独立引擎 (Zero-LLM Core 模式)**（执行 `python benchmark_scifact_official.py`，无模型 CPU 模式）：
+     - **纯 Python 独立引擎 (Zero-LLM Core 模式)**（执行 `python benchmarks/benchmark_scifact_official.py`，无模型 CPU 模式）：
        - **官方 SciFact Dev 集 ($N=323$)**: 总体准确率 = **50.5%** (Macro F1 = 0.47)
 2. **两阶段解耦核查与文献实体消歧 Benchmark**:
    - **阶段一：文献实体消歧重排 (`ReferenceResolver`)**: 规范化 DOI (`normalize_doi`)、跨 Provider 候选去重，并计算包含 5 维打分分解的元数据 (`resolution_metadata` 包含 `title_score`, `author_score`, `year_score`, `venue_score`, `rank_margin`)。
-     - **实体消歧 Benchmark (`python benchmark_reference_resolution.py`)**: 基于 8 案例确定性回归测试集 ($N=8$：5 条正向匹配，3 条歧义/虚构弃权) 评测，达成 **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, **100.00% Abstention Accuracy** 歧义与虚构弃权率。
+     - **实体消歧 Benchmark (`python benchmarks/benchmark_reference_resolution.py`)**: 基于 8 案例确定性回归测试集 ($N=8$：5 条正向匹配，3 条歧义/虚构弃权) 评测，达成 **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, **100.00% Abstention Accuracy** 歧义与虚构弃权率。
    - **阶段二：子句级语义对齐与极性冲突拦截 (`ClaimEvaluator`)**: 将对齐结果划归为量化客观层级 (`SUPPORTED`, `PARTIAL`, `NEUTRAL`, `CONTRADICTED`, `UNVERIFIED`)，并采用局域子句切分 (`split_clauses`) 消除转折复合句中的假误报。
 3. **句级上下文精准定位与全格式支持 (`Sentence-Level Locator & arXiv Parser`)**:
    - 不再只返回整篇数百字的模糊摘要，而是自动将摘要/全文切句，**精准高亮显示被引文献中与正文断言最吻合的单句原文**。
@@ -166,8 +166,8 @@ export ACADEMIC_GUARDRAIL_EMAIL="researcher@university.edu"
 
 ### 1. 评测数据集与范围透明度声明
 为了保证**100% 严谨性与学术诚信**，系统严格区分两个不同的测试数据集：
-- **官方 SciFact Dev 全量集 ($N=323$)**：用于评估系统的整体召回与与宿主 Agent 联合判定效能（`benchmark_scifact_official.py` 与 `evaluate_llm_scifact_results.py`）。
-- **本地微型 Baseline 算法对比集 ($N=12$)**：用于秒级对比基础词法组件的判定耗时与极性能力（`benchmark_baselines.py`）。
+- **官方 SciFact Dev 集 ($N=323$)**: 用于全量基准性能评估（运行 `benchmarks/benchmark_scifact_official.py` 与 `benchmarks/evaluate_llm_scifact_results.py`）。
+- **本地 Micro Subset 子集 ($N=12$)**: 用于快速测算组件时延与传统词频方法对比（运行 `benchmarks/benchmark_baselines.py`）。
 
 所有评测均在标准 CPU 消费级硬件环境下执行：
 - **CPU**: Intel Core / AMD Ryzen (16 vCPU)
@@ -189,7 +189,7 @@ export ACADEMIC_GUARDRAIL_EMAIL="researcher@university.edu"
 
 在项目根目录下运行完整 Baseline 对比评测脚本：
 ```bash
-python benchmark_baselines.py
+python benchmarks/benchmark_baselines.py
 ```
 
 ---
