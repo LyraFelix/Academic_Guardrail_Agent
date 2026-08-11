@@ -103,7 +103,7 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 pip install academic-guardrail
 ```
 * **安装体积**：**< 35 MB**
-* **核心依赖**：`httpx`, `pydantic`, `jieba`, `pdfplumber`, `python-docx`, `mcp`（完全无 PyTorch / HuggingFace 绑定）。
+* **核心依赖**：`httpx`, `pydantic`, `pypdf`, `python-docx`, `mcp`（完全无 PyTorch / HuggingFace 绑定）。
 * **适用场景**：快速 CI/CD、即时 CLI 审计、零冷启动开销（<50ms），以及配合宿主 Coding Agent 的 LLM 进行高阶语义判读。
 
 ### 🧠 2. 全功能多语言向量模式 (Full Mode - 可选)
