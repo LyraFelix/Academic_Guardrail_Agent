@@ -86,12 +86,11 @@ class ChineseAcademicProvider:
         base_url = os.environ.get("SEMANTIC_SCHOLAR_API_BASE", "https://api.semanticscholar.org/graph/v1")
         url = f"{base_url}/paper/search?query={quoted_q}&limit={limit}&fields=title,authors,year,externalIds,abstract,isRetracted,venue"
 
+        results = []
         try:
             data_json = await self.client.get_json(url)
             if data_json and "data" in data_json:
-                data = data_json["data"]
-                results = []
-                for p in data:
+                for p in data_json["data"]:
                     ext_ids = p.get("externalIds", {})
                     doi = ext_ids.get("DOI") or ext_ids.get("ArXiv")
                     authors = [a.get("name") for a in p.get("authors", []) if a.get("name")]
@@ -104,13 +103,11 @@ class ChineseAcademicProvider:
                         "abstract": p.get("abstract", ""),
                         "is_retracted": p.get("isRetracted", False)
                     })
-                self.cache.set(cache_key, results)
-                return results
         except Exception as e:
             logger.debug(f"[academic_guardrail] Semantic Scholar query skipped due to rate limit/network error: {e}")
-            return []
-        self.cache.set(cache_key, [])
-        return []
+        # Cache result (including empty list) to prevent redundant requests on failure
+        self.cache.set(cache_key, results)
+        return results
 
     async def verify_citation(
         self,

@@ -1,15 +1,34 @@
 """Model Context Protocol (MCP) Server for Academic Guardrail Agent."""
 
 import functools
+from typing import Optional
 from mcp.server.fastmcp import FastMCP
-from academic_guardrail.core.service import AuditService
 from academic_guardrail.core.exceptions import (
     AcademicGuardrailError, ParserError, ProviderError, RateLimitError
 )
+from academic_guardrail.core.models import VerificationStatus
 
 mcp = FastMCP("Academic Guardrail Agent")
-service = AuditService()
-provider = service.provider
+
+# Lazy-initialized service — created on first tool call, NOT at import time.
+# This prevents proxy scanning and stdout pollution during module load (critical for MCP stdio mode).
+_service = None
+_provider = None
+
+
+def _get_service():
+    """Returns the process-wide AuditService singleton, creating it lazily on first call."""
+    global _service, _provider
+    if _service is None:
+        from academic_guardrail.core.service import AuditService
+        _service = AuditService()
+        _provider = _service.provider
+    return _service
+
+
+def _get_provider():
+    _get_service()
+    return _provider
 
 
 def handle_mcp_exceptions(func):
@@ -41,6 +60,7 @@ async def verify_single_citation(citation_str_or_doi: str) -> str:
     """验证单条文献引用的真实性、DOI 匹配及撤稿状态。
     返回确定性的数据库元数据与检索结果，供 AI Agent 上下文直接评阅。
     """
+    provider = _get_provider()
     is_doi = citation_str_or_doi.startswith("10.") or "doi.org" in citation_str_or_doi
     doi = citation_str_or_doi if is_doi else None
     title = citation_str_or_doi if not is_doi else ""
@@ -74,6 +94,7 @@ async def verify_single_citation(citation_str_or_doi: str) -> str:
 @handle_mcp_exceptions
 async def check_paper_retraction(doi: str) -> str:
     """专门查询指定 DOI 论文是否存在撤稿记录。"""
+    provider = _get_provider()
     res = await provider.verify_citation(title="", doi=doi)
     if res.get("is_retracted"):
         return f"🔴 [RETRACTED] 论文 {doi} 已被撤稿！"
@@ -89,6 +110,7 @@ async def audit_document_claims(file_path: str, refs_dir: str = "") -> str:
     """全面审计论文原稿（.pdf, .docx, .md, .tex），抽取引用真实性、撤稿记录，
     并提取正文断言与被引文献的精准单句原文，透传给 AI Agent 在对话中做对齐判定。
     """
+    service = _get_service()
     report = await service.audit_document(file_path, refs_dir=refs_dir if refs_dir else None)
 
     if report.total_citations == 0:
@@ -105,9 +127,16 @@ async def audit_document_claims(file_path: str, refs_dir: str = "") -> str:
         claim_text = item.claim.claim_sentence if item.claim else "无"
         evidence_text = item.abstract_tldr or "无摘要原文"
 
-        status_flag = "🔴 撤稿高危" if item.status == "RETRACTED" else ("🟢 已查实" if item.status == "VALID" else "🟡 未查核")
+        # Use enum comparison, not string comparison
+        if item.status == VerificationStatus.RETRACTED:
+            status_flag = "🔴 撤稿高危"
+        elif item.status == VerificationStatus.VALID:
+            status_flag = "🟢 已查实"
+        else:
+            status_flag = "🟡 未查核"
+
         doi_str = f" | DOI: {item.verified_doi}" if item.verified_doi else ""
-        
+
         ref_conf_str = f"{item.reference_confidence:.2f}" if item.reference_confidence is not None else "N/A"
         align_score_str = f"{item.claim_alignment_score:.2f}" if item.claim_alignment_score is not None else "N/A"
         align_state_str = item.alignment_state or "UNVERIFIED"

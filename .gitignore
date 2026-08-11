@@ -48,7 +48,9 @@ env/
 *.swo
 
 # Project specific generated output reports and caches
-*.html
+*_report.html
+*_audit*.html
+*_survey*.html
 *.log
 *.db
 *.sqlite3

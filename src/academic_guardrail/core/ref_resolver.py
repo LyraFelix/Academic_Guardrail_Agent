@@ -9,7 +9,7 @@ from academic_guardrail.core.config import GuardrailConfig
 STOP_WORDS = {
     "the", "a", "an", "of", "on", "in", "for", "with", "by", "about", "against",
     "between", "into", "through", "during", "before", "after", "above", "below",
-    "to", "from", "up", "down", "in", "out", "over", "under", "again", "further",
+    "to", "from", "up", "down", "out", "over", "under", "again", "further",
     "then", "once", "and", "or", "study", "research", "analysis", "approach", "paper"
 }
 
@@ -76,7 +76,7 @@ class ReferenceResolver:
 
         # Stage 2: Identity Gate
         author_score = self._calc_author_score(cit, candidate)
-        c_year = cit.year or (int(re.search(r'\b(19\d{2}|20\d{2})\b', cit.raw_text).group(1)) if re.search(r'\b(19\d{2}|20\d{2})\b', cit.raw_text or "") else None)
+        c_year = cit.year or (int(re.search(r'\b(19\d{2}|20\d{2})\b', cit.raw_text or "").group(1)) if re.search(r'\b(19\d{2}|20\d{2})\b', cit.raw_text or "") else None)
         cand_year = candidate.get("publication_year") or candidate.get("year")
 
         year_match = None

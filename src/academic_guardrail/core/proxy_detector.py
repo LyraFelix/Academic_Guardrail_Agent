@@ -11,8 +11,11 @@ Detection order:
 import os
 import sys
 import socket
+import logging
 import urllib.request
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     import winreg
@@ -134,7 +137,7 @@ class SystemProxyDetector:
                 os.environ["HTTPS_PROXY"] = proxy
             if not os.environ.get("ALL_PROXY"):
                 os.environ["ALL_PROXY"] = proxy
-            print(f"[proxy] ✅ 检测到系统代理: {proxy}，已注入环境变量", flush=True)
+            logger.debug("[proxy] System proxy detected: %s — injected into environment.", proxy)
         else:
-            print("[proxy] ⚠️  未检测到活跃代理，英文数据库 API 可能无法访问", flush=True)
+            logger.debug("[proxy] No active proxy detected; international API calls may time out without a proxy.")
         return proxy

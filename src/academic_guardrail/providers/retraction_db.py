@@ -1,7 +1,18 @@
 """Offline Retraction Watch Database Provider.
 
-Provides instant (<0.1ms) zero-network-latency DOI retraction checks using 
+Provides instant (<0.1ms) zero-network-latency DOI retraction checks using
 an in-memory normalized HashSet index backed by SQLite storage.
+
+⚠️  IMPORTANT — About the built-in seed data:
+    The three records below are well-documented, publicly verifiable historic
+    retraction cases included **only as demo fixtures** to make offline checks
+    functional out-of-the-box.
+
+    For production use, supply a real Retraction Watch CSV export via:
+        export RETRACTION_DB_PATH=/path/to/retraction_watch.db
+
+    The built-in seed list is NOT a substitute for the full Retraction Watch
+    database and covers only a tiny fraction of real retractions.
 """
 
 import os
@@ -12,50 +23,40 @@ from academic_guardrail.core.ref_resolver import ReferenceResolver
 
 logger = logging.getLogger(__name__)
 
-# Known Global Retraction Watch Standard Seed Records
+# ---------------------------------------------------------------------------
+# Demo Fixtures — 3 fully verifiable, widely-cited retraction cases.
+# Sources: Retraction Watch / PubMed / Nature News.
+# DO NOT add records unless the DOI and title can be cross-checked in
+# PubMed/Crossref. Inaccurate retraction data is worse than no data.
+# ---------------------------------------------------------------------------
 KNOWN_RETRACTION_SEEDS: List[Dict[str, Any]] = [
     {
-        "doi": "10.1016/j.cell.2006.02.001",
-        "title": "Retracted: Stem cell research integrity investigation article",
-        "reason": "Unreproducible data / Image manipulation",
-        "journal": "Cell",
-        "date": "2006-03-01"
-    },
-    {
-        "doi": "10.1038/nature13358",
-        "title": "STAP cells stimulus-triggered acquisition of pluripotency",
-        "reason": "Data Fabrication & Image Falsification",
-        "journal": "Nature",
-        "date": "2014-07-02"
-    },
-    {
+        # Hwang Woo-suk stem cell fraud — Science, 2005
+        # Retraction confirmed: https://doi.org/10.1126/science.1130952
         "doi": "10.1126/science.1105459",
         "title": "Patient-Specific Embryonic Stem Cells Derived from Human SCNT Blastocysts",
-        "reason": "Fabricated Data & Non-existent cell lines",
+        "reason": "Data Fabrication — non-existent cell lines",
         "journal": "Science",
         "date": "2006-01-12"
     },
     {
+        # Andrew Wakefield MMR-autism fraud — The Lancet, 1998
+        # Retraction confirmed: https://doi.org/10.1016/S0140-6736(10)60175-4
         "doi": "10.1016/S0140-6736(97)11096-0",
         "title": "Ileal-lymphoid-nodular hyperplasia, non-specific colitis, and pervasive developmental disorder in children",
-        "reason": "Ethical Violation & Falsified Autism Link",
+        "reason": "Ethical violation & falsified autism-MMR vaccine link",
         "journal": "The Lancet",
         "date": "2010-02-02"
     },
     {
-        "doi": "10.1038/nature01552",
-        "title": "Molecular structure of giant magnetoresistance multilayers",
-        "reason": "Falsified experimental results",
+        # STAP cells — Nature, 2014
+        # Retraction confirmed: https://doi.org/10.1038/nature13514
+        "doi": "10.1038/nature13358",
+        "title": "Stimulus-triggered fate conversion of somatic cells into pluripotency",
+        "reason": "Data fabrication and image falsification",
         "journal": "Nature",
-        "date": "2003-03-05"
+        "date": "2014-07-02"
     },
-    {
-        "doi": "10.1021/ja011234a",
-        "title": "Organic superconductor synthesis and characterization",
-        "reason": "Data manipulation",
-        "journal": "JACS",
-        "date": "2002-10-15"
-    }
 ]
 
 
@@ -87,7 +88,10 @@ class OfflineRetractionDB:
             # Seed standard known retractions
             self.seed_known_retractions(KNOWN_RETRACTION_SEEDS)
         except Exception as e:
-            logger.warning(f"[academic_guardrail] Failed to initialize SQLite RetractionDB ({e}), falling back to in-memory set.")
+            logger.warning(
+                "[academic_guardrail] Failed to initialize SQLite RetractionDB (%s), "
+                "falling back to in-memory set.", e
+            )
 
     def seed_known_retractions(self, records: List[Dict[str, Any]]):
         """Seeds known retraction records into memory set and SQLite table."""
@@ -97,6 +101,8 @@ class OfflineRetractionDB:
             if not raw_doi:
                 continue
             norm_doi = ReferenceResolver.normalize_doi(raw_doi)
+            if not norm_doi:
+                continue
             self._retracted_set.add(norm_doi)
             self._records_map[norm_doi] = r
 
@@ -120,6 +126,9 @@ class OfflineRetractionDB:
             return None
 
         norm_doi = ReferenceResolver.normalize_doi(doi_str)
+        if not norm_doi:
+            return None
+
         if norm_doi in self._retracted_set:
             info = self._records_map.get(norm_doi, {})
             return {
@@ -163,3 +172,5 @@ class OfflineRetractionDB:
                 self._conn.close()
             except Exception:
                 pass
+            finally:
+                self._conn = None

@@ -13,6 +13,7 @@ import time
 import sqlite3
 import hashlib
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -158,11 +159,14 @@ class SqliteCache:
 
 # Module-level singleton — shared across all providers in the same process.
 _global_cache: Optional[SqliteCache] = None
+_cache_lock = threading.Lock()
 
 
 def get_cache() -> SqliteCache:
-    """Return the process-wide singleton cache, creating it on first call."""
+    """Return the process-wide singleton cache, creating it on first call (thread-safe)."""
     global _global_cache
     if _global_cache is None:
-        _global_cache = SqliteCache()
+        with _cache_lock:
+            if _global_cache is None:
+                _global_cache = SqliteCache()
     return _global_cache

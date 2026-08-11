@@ -1,6 +1,7 @@
 """Audit Service Layer orchestrating document parsing, citation lookup, claim evaluation, and report generation."""
 
 import asyncio
+import logging
 from typing import Optional, List, Tuple
 from academic_guardrail.core.parser import DocumentParser
 from academic_guardrail.core.ref_store import LocalRefStore
@@ -14,6 +15,8 @@ from academic_guardrail.providers.chinese_academic import ChineseAcademicProvide
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
 from academic_guardrail.core.config import GuardrailConfig
 
+logger = logging.getLogger(__name__)
+
 
 class AuditService:
     """Core Service Layer for Academic Guardrail Agent."""
@@ -26,9 +29,11 @@ class AuditService:
         self.evaluator = ClaimEvaluator()
 
     async def close(self):
-        """Closes provider HTTP client session pools."""
+        """Closes provider HTTP client session pools and offline database connections."""
         if hasattr(self.provider, "client") and self.provider.client:
             await self.provider.client.close()
+        if hasattr(self.provider, "retraction_db"):
+            self.provider.retraction_db.close()
 
     async def verify_single_item(
         self,
@@ -168,10 +173,20 @@ class AuditService:
                     status = VerificationStatus.CLAIM_MISMATCH
                     risk = RiskLevel.NOTICE
                     msg = f"🟡 部分对齐：正文断言与文献摘要呈现中度相关（仅背景或部分吻合）({score:.2f})。{reason}{context_str}"
-                else: # SUPPORTED
-                    status = VerificationStatus.VALID
-                    risk = RiskLevel.PASS
-                    msg = f"🟢 高度一致：正文断言与文献摘要呈现高相关对齐 ({score:.2f})。{reason}{context_str}"
+                else:  # SUPPORTED or unexpected state
+                    if alignment_state == "SUPPORTED":
+                        status = VerificationStatus.VALID
+                        risk = RiskLevel.PASS
+                        msg = f"🟢 高度一致：正文断言与文献摘要呈现高相关对齐 ({score:.2f})。{reason}{context_str}"
+                    else:
+                        # Defensive fallback — alignment_state returned unexpected value
+                        logger.warning(
+                            "[academic_guardrail] Unexpected alignment_state '%s'; defaulting to UNVERIFIED.",
+                            alignment_state
+                        )
+                        status = VerificationStatus.UNVERIFIED
+                        risk = RiskLevel.WARNING
+                        msg = "🟡 内部警告：断言对齐状态未知，请手工确认。"
 
         return VerificationResult(
             citation=cit,

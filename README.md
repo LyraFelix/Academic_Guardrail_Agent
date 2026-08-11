@@ -106,7 +106,7 @@ Designed for lightweight CLI usage and AI Coding Agent MCP integrations with zer
 pip install academic-guardrail
 ```
 * **Footprint**: **< 35 MB**
-* **Dependencies**: `httpx`, `pydantic`, `jieba`, `pdfplumber`, `python-docx`, `mcp` (Zero PyTorch / HuggingFace lock-in).
+* **Dependencies**: `httpx`, `pydantic`, `pypdf`, `python-docx`, `mcp` (Zero PyTorch / HuggingFace lock-in).
 * **Best For**: Fast CI/CD, instant CLI auditing, zero cold-start delay (<50ms), and Host Agent (Cursor/Antigravity) LLM context-provisioning.
 
 #### 🧠 Full Mode (Optional Multilingual Vector Embeddings)

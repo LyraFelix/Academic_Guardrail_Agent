@@ -73,6 +73,10 @@ class CrossrefProvider:
             for item in items:
                 titles = item.get("title", [])
                 t = titles[0] if titles else query
+                t_lower = t.lower()
+                is_retracted = any(
+                    kw in t_lower for kw in ["retracted", "retraction", "withdrawn"]
+                ) or item.get("type") in ["retraction", "retraction-notice"]
                 authors_raw = item.get("author", [])
                 authors = [f"{a.get('given', '')} {a.get('family', '')}".strip() for a in authors_raw]
                 year = None
@@ -86,7 +90,7 @@ class CrossrefProvider:
                     "authors": authors,
                     "year": year,
                     "publisher": item.get("publisher"),
-                    "is_retracted": False
+                    "is_retracted": is_retracted
                 })
             self.cache.set(cache_key, results)
             return results

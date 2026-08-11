@@ -26,8 +26,8 @@ ACADEMIC_SYNONYMS = {
     "diabetic": {"diabetic", "diabetes", "diabet"},
     "diabetes": {"diabetic", "diabetes", "diabet"},
     "diabet": {"diabetic", "diabetes", "diabet"},
-    "patient": {"patient", "patients", "patiently"},
-    "patients": {"patient", "patients", "patiently"},
+    "patient": {"patient", "patients"},
+    "patients": {"patient", "patients"},
 }
 
 # Universal directional antonym sets for generic polarity inversion detection

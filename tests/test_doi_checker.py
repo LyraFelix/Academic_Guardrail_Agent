@@ -11,14 +11,14 @@ def test_retracted_doi_detection():
     provider = ChineseAcademicProvider()
     mock_openalex = AsyncMock(return_value={
         "title": "Retracted: Some Paper",
-        "doi": "10.1016/j.cell.2006.02.001",
+        "doi": "10.1126/science.1105459",
         "abstract": "",
         "is_retracted": True
     })
     mock_crossref = AsyncMock(return_value=None)
     with patch.object(provider.openalex, "get_by_doi", mock_openalex), \
          patch.object(provider.crossref, "get_by_doi", mock_crossref):
-        res = asyncio.run(provider.verify_citation(title="", doi="10.1016/j.cell.2006.02.001"))
+        res = asyncio.run(provider.verify_citation(title="", doi="10.1126/science.1105459"))
     assert res["matched"] is True
     assert res["is_retracted"] is True
 
@@ -61,7 +61,7 @@ def test_doi_normalization_and_deduplication():
 def test_offline_retraction_db_direct():
     from academic_guardrail.providers.retraction_db import OfflineRetractionDB
     db = OfflineRetractionDB()
-    hit = db.check_doi("10.1016/j.cell.2006.02.001")
+    hit = db.check_doi("10.1126/science.1105459")
     assert hit is not None
     assert hit["is_retracted"] is True
     assert hit["source"] == "Offline Retraction Watch Index"

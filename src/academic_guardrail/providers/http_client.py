@@ -10,6 +10,7 @@ import asyncio
 import logging
 import httpx
 from typing import Optional, Dict, Any
+from academic_guardrail import __version__
 from academic_guardrail.core.proxy_detector import SystemProxyDetector
 from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class AcademicHttpClient:
     """Async HTTP Client with connection pooling, proxy detection, and exponential backoff retries."""
 
-    DEFAULT_USER_AGENT = "AcademicGuardrail/0.1.0 (mailto:academic-guardrail@example.com)"
+    DEFAULT_USER_AGENT = f"AcademicGuardrail/{__version__} (mailto:academic-guardrail@example.com)"
 
     def __init__(
         self,
@@ -33,7 +34,7 @@ class AcademicHttpClient:
         self.email = email or os.environ.get("ACADEMIC_GUARDRAIL_EMAIL") or GuardrailConfig.DEFAULT_EMAIL
         self.timeout = timeout
         self.max_retries = max_retries
-        self.user_agent = f"AcademicGuardrail/0.1.0 (mailto:{self.email})"
+        self.user_agent = f"AcademicGuardrail/{__version__} (mailto:{self.email})"
         
         # Setup connection pool limits
         limits = httpx.Limits(

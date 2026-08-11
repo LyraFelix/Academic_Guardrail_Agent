@@ -3,7 +3,7 @@
 import re
 import difflib
 import logging
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +24,24 @@ class SemanticMatcher:
 
     def __init__(self, model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"):
         self.model_name = model_name
-        self._model = None
+        self._model: Optional[Any] = None
+        self._model_load_failed: bool = False
 
     def _get_model(self):
-        if _HAS_ST and self._model is None:
+        if not _HAS_ST or self._model_load_failed:
+            return None
+        if self._model is None:
             try:
                 self._model = SentenceTransformer(self.model_name)
                 logger.info(f"[academic_guardrail] Successfully loaded vector embedding model: '{self.model_name}'")
             except Exception as e:
-                self._model = False
+                self._model_load_failed = True
                 logger.warning(
                     f"[academic_guardrail] Failed to load SentenceTransformer model '{self.model_name}' ({type(e).__name__}: {e}). "
                     "Falling back to rule-based lexical alignment engine."
                 )
-        return self._model if self._model else None
+                return None
+        return self._model
 
     def compute_similarity(self, text_a: str, text_b: str) -> float:
         score, _ = self.compute_similarity_with_engine(text_a, text_b)

@@ -12,11 +12,6 @@ try:
 except ImportError:
     docx = None
 
-try:
-    import pypdf
-except ImportError:
-    pypdf = None
-
 
 class LocalRefStore:
     """Scans a directory containing reference PDFs, DOCXs, or TXTs, extracts structured PaperRecord instances, and matches by content."""
@@ -48,10 +43,12 @@ class LocalRefStore:
             elif ext == '.docx' and docx:
                 doc = docx.Document(path)
                 fulltext = "\n".join([p.text for p in doc.paragraphs if p.text])
-            elif ext == '.pdf' and pypdf:
-                reader = pypdf.PdfReader(path)
-                pages = [p.extract_text() for p in reader.pages if p.extract_text()]
-                fulltext = "\n".join(pages)
+            elif ext == '.pdf':
+                from academic_guardrail.core.pdf_extractor import PDFTextExtractor
+                try:
+                    fulltext = PDFTextExtractor.extract(path)
+                except Exception:
+                    return None
         except Exception:
             return None
 

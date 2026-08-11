@@ -201,18 +201,12 @@ class DocumentParser:
             raise ParserError(f"Failed to parse DOCX file {file_path}: {e}") from e
 
     def _parse_pdf_file(self, file_path: str) -> List[Tuple[Citation, ContextClaim]]:
-        full_text = []
+        from academic_guardrail.core.pdf_extractor import PDFTextExtractor
         try:
-            import pdfplumber
-            with pdfplumber.open(file_path) as pdf:
-                for idx, page in enumerate(pdf.pages):
-                    p_text = page.extract_text()
-                    if p_text:
-                        full_text.append(f"--- Page {idx+1} ---\n" + p_text)
-            text = "\n".join(full_text)
+            text = PDFTextExtractor.extract(file_path)
             return self._extract_citations_and_claims_from_text(text, location_prefix="PDF")
-        except ImportError:
-            return self._parse_text_file(file_path)
+        except RuntimeError as e:
+            raise ParserError(f"PDF parsing unavailable: {e}") from e
         except Exception as e:
             raise ParserError(f"Failed to parse PDF file {file_path}: {e}") from e
 

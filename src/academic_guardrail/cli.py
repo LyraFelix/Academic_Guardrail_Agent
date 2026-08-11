@@ -87,7 +87,7 @@ def audit(file_path: str, output: str, refs_dir: Optional[str], email: Optional[
                     f.write(content)
                 console.print(f"[bold green]审查报告已成功输出至:[/bold green] {output}")
 
-                if open_browser or output.endswith('.html'):
+                if open_browser and output.endswith('.html'):
                     abs_path = os.path.abspath(output)
                     console.print(f"[bold cyan]🌐 正在自动调起浏览器展示审计报告...[/bold cyan]")
                     webbrowser.open(f"file:///{abs_path}")
