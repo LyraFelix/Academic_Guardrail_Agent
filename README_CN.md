@@ -76,7 +76,7 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
        - **官方 SciFact Dev 集 ($N=323$)**: 总体准确率 = **50.5%** (Macro F1 = 0.47)
 2. **两阶段解耦核查与文献实体消歧 Benchmark**:
    - **阶段一：文献实体消歧重排 (`ReferenceResolver`)**: 规范化 DOI (`normalize_doi`)、跨 Provider 候选去重，并计算包含 5 维打分分解的元数据 (`resolution_metadata` 包含 `title_score`, `author_score`, `year_score`, `venue_score`, `rank_margin`)。
-     - **实体消歧 Benchmark (`python benchmark_reference_resolution.py`)**: 达成 **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, **100.00% Abstention Accuracy** 歧义与虚构弃权率。
+     - **实体消歧 Benchmark (`python benchmark_reference_resolution.py`)**: 基于 8 案例确定性回归测试集 ($N=8$：5 条正向匹配，3 条歧义/虚构弃权) 评测，达成 **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, **100.00% Abstention Accuracy** 歧义与虚构弃权率。
    - **阶段二：子句级语义对齐与极性冲突拦截 (`ClaimEvaluator`)**: 将对齐结果划归为量化客观层级 (`SUPPORTED`, `PARTIAL`, `NEUTRAL`, `CONTRADICTED`, `UNVERIFIED`)，并采用局域子句切分 (`split_clauses`) 消除转折复合句中的假误报。
 3. **句级上下文精准定位与全格式支持 (`Sentence-Level Locator & arXiv Parser`)**:
    - 不再只返回整篇数百字的模糊摘要，而是自动将摘要/全文切句，**精准高亮显示被引文献中与正文断言最吻合的单句原文**。
@@ -111,7 +111,7 @@ pip install academic-guardrail
 ```bash
 pip install "academic-guardrail[full]"
 ```
-* **安装体积**：**~ 3.0 GB**（包含 PyTorch 与 `sentence-transformers`）。
+* **安装体积**：**~ 2–4 GB（取决于平台环境）**（包含 PyTorch 与 `sentence-transformers`）。
 * **核心功能**：自动启用 `paraphrase-multilingual-MiniLM-L12-v2` 进行本地 CPU 向量特征提取。
 
 ---
@@ -185,7 +185,7 @@ export ACADEMIC_GUARDRAIL_EMAIL="researcher@university.edu"
 | **SequenceMatcher (Ratio)** | 0.59 | 0.00 | 1.35 ms | 0 MB / 纯 CPU |
 | **Academic Guardrail (Ours)** | **0.75** | **1.00** | **5.44 ms** | **0 MB / 纯 CPU** |
 
-> **定位说明**：`Academic Guardrail` 核心引擎采用轻量 CPU-First 架构，旨在以 <1ms 延迟向宿主 Coding Agent (Cursor / Antigravity / Windsurf) 上下文提供确定性单句证据，高阶推理与复杂多跳证明由宿主 LLM Agent 联合完成。
+> **定位说明**：`Academic Guardrail` 核心引擎采用 **zero-LLM, lightweight CPU-first** 架构（Core Mode 无重型 ML/AI 模型依赖），旨在以 <1ms 延迟向宿主 Coding Agent (Cursor / Antigravity / Windsurf) 上下文提供确定性单句证据，高阶推理与复杂多跳证明由宿主 LLM Agent 联合完成。
 
 在项目根目录下运行完整 Baseline 对比评测脚本：
 ```bash

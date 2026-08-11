@@ -76,7 +76,7 @@ Report output to: report.html
        - **Official SciFact Dev Set ($N=323$)**: Overall Accuracy = **50.5%** (Macro F1 = 0.47)
 2. **Two-Stage Decoupled Verification & Entity Resolution Benchmark**:
    - **Stage 1: Reference Entity Resolution (`ReferenceResolver`)**: Normalizes DOIs (`normalize_doi`), performs cross-provider candidate deduplication, and calculates 5-score breakdown metadata (`resolution_metadata` containing `title_score`, `author_score`, `year_score`, `venue_score`, `rank_margin`).
-     - **Resolution Benchmark (`python benchmark_reference_resolution.py`)**: Achieves **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, and **100.00% Abstention Accuracy** on ambiguous/hallucinated citations.
+     - **Resolution Benchmark (`python benchmark_reference_resolution.py`)**: Evaluated on an 8-case deterministic regression suite ($N=8$: 5 positive matches, 3 ambiguous/hallucinated abstentions), achieving **100.00% Top-1 Accuracy**, **1.0000 MRR**, **100.00% Recall@5**, and **100.00% Abstention Accuracy** on ambiguous/hallucinated citations.
    - **Stage 2: Clause-Level Alignment & Polarity Conflict Detection (`ClaimEvaluator`)**: Evaluates claims into calibrated objective tiers (`SUPPORTED`, `PARTIAL`, `NEUTRAL`, `CONTRADICTED`, `UNVERIFIED`) using localized sub-clause segmentation (`split_clauses`) to eliminate false contradiction alerts on complex compound sentences.
 3. **Sentence-Level Context Locator & Multi-Format Parsing (`Sentence-Level Locator & arXiv Parser`)**:
    - Automatically splits abstracts/full-text into sentences and highlights the exact single sentence in the reference paper that best corresponds to the manuscript claim.
@@ -114,7 +114,7 @@ Installs heavy pretrained vector Transformer models for offline, standalone vect
 ```bash
 pip install "academic-guardrail[full]"
 ```
-* **Footprint**: **~ 3.0 GB** (Includes PyTorch & `sentence-transformers`).
+* **Footprint**: **~2–4 GB depending on platform** (Includes PyTorch & `sentence-transformers`).
 * **Feature**: Automatically loads `paraphrase-multilingual-MiniLM-L12-v2` for offline CPU vector embeddings.
 
 ---
@@ -190,7 +190,7 @@ We evaluated `Academic Guardrail` against standard lexical baseline methods on t
 
 > Note: `Academic Guardrail` operates as a lightweight, CPU-first Core Mode engine for instant MCP context provisioning. High-level semantic reasoning is jointly performed with host AI agents (Cursor / Antigravity / Windsurf).
 
-> Why use a lightweight `Hybrid Multilingual Claim Alignment` heuristic algorithm over heavy pretrained NLI models (BGE-M3, DeBERTa-v3-NLI, Llama-3)? Neural NLI models require 2GB–8GB GPU VRAM and 50–500ms latency, which violates our core goal of a **zero-dependency, instant, CPU-only local CLI & MCP tool**.
+> Why use a lightweight `Hybrid Multilingual Claim Alignment` heuristic algorithm over heavy pretrained NLI models (BGE-M3, DeBERTa-v3-NLI, Llama-3)? Neural NLI models require 2GB–8GB GPU VRAM and 50–500ms latency, which violates our core goal of a **zero-LLM, lightweight CPU-first local CLI & MCP tool** (with no heavy ML dependencies in Core Mode).
 
 Run the full baseline comparison script from the project root:
 ```bash
