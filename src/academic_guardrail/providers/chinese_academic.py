@@ -266,6 +266,7 @@ class ChineseAcademicProvider:
                                 "confidence": round(best.get("match_score", 0.90), 2),
                                 "match_confidence": best.get("match_confidence", "HIGH"),
                                 "match_margin": best.get("match_margin", 1.0),
+                                "evidence_status": "RETRACTED" if best.get("is_retracted") else "ARTICLE_MATCHED",
                                 "resolution_metadata": best.get("resolution_metadata"),
                                 "is_uncertain": best.get("is_uncertain", False),
                                 "ambiguous_candidates": best.get("ambiguous_candidates"),
@@ -291,6 +292,19 @@ class ChineseAcademicProvider:
 
             except (asyncio.TimeoutError, httpx.HTTPError, ProviderError) as e:
                 logger.debug(f"[academic_guardrail] Online citation verification incomplete (network/timeout): {e}")
+                failure_tag = "RATE_LIMITED" if isinstance(e, RateLimitError) else "TIMEOUT" if isinstance(e, asyncio.TimeoutError) else "NETWORK_ERROR"
+                return {
+                    "matched": None,
+                    "doi": doi,
+                    "title": title,
+                    "is_retracted": False,
+                    "abstract": "",
+                    "confidence": 0.0,
+                    "evidence_status": "PROVIDER_UNAVAILABLE",
+                    "failure_reason": failure_tag,
+                    "source": "Infrastructure Error",
+                    "message": f"🟡 数据源暂时不可用 ({failure_tag})：无法形成确定性验证结论，请稍后重试。"
+                }
             except Exception as e:
                 logger.warning(f"[academic_guardrail] Unexpected exception during citation verification: {e}", exc_info=True)
 
@@ -302,5 +316,6 @@ class ChineseAcademicProvider:
                 "is_retracted": False,
                 "abstract": "",
                 "confidence": 0.0,
+                "evidence_status": "NOT_FOUND",
                 "source": "None"
             }

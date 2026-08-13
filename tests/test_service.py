@@ -57,3 +57,28 @@ class TestAuditService:
         assert res.alignment_state is None
         assert res.nli_state is None
         assert "撤稿" in res.message
+
+    def test_audit_single_item_provider_unavailable(self, service):
+        from unittest.mock import AsyncMock, patch
+        from academic_guardrail.core.models import Citation, ContextClaim, VerificationStatus, EvidenceStatus
+
+        cit = Citation(id="cit_timeout", raw_text="[1] Timeout Paper.", title="Timeout Paper")
+        claim = ContextClaim(citation_id="cit_timeout", claim_sentence="Testing timeout.", surrounding_context="")
+
+        mock_res = {
+            "matched": None,
+            "title": "Timeout Paper",
+            "is_retracted": False,
+            "confidence": 0.0,
+            "evidence_status": "PROVIDER_UNAVAILABLE",
+            "failure_reason": "TIMEOUT",
+            "message": "🟡 数据源暂时不可用 (TIMEOUT)"
+        }
+
+        with patch.object(service.provider, "verify_citation", AsyncMock(return_value=mock_res)):
+            res = asyncio.run(service.verify_single_item(cit, claim))
+
+        assert res.status == VerificationStatus.UNVERIFIED
+        assert res.evidence_status == EvidenceStatus.PROVIDER_UNAVAILABLE
+        assert res.failure_reason == "TIMEOUT"
+        assert res.risk_level == RiskLevel.WARNING

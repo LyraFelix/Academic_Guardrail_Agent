@@ -15,9 +15,18 @@ class RiskLevel(str, Enum):
 class VerificationStatus(str, Enum):
     VALID = "VALID"                       # 元数据真实匹配且正常
     RETRACTED = "RETRACTED"               # 已被撤稿或有学术警示
-    UNVERIFIED = "UNVERIFIED"             # 检索库未能核实
+    UNVERIFIED = "UNVERIFIED"             # 检索库未能核实或基础设施不可用
     CLAIM_MISMATCH = "CLAIM_MISMATCH"     # 文献真实存在但断言偏差
     HALLUCINATED = "HALLUCINATED"         # 疑似 LLM 虚构论文
+
+
+class EvidenceStatus(str, Enum):
+    ARTICLE_MATCHED = "ARTICLE_MATCHED"
+    JOURNAL_MATCHED_ARTICLE_UNVERIFIED = "JOURNAL_MATCHED_ARTICLE_UNVERIFIED"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    NOT_FOUND = "NOT_FOUND"
+    NO_RETRACTION_FOUND = "NO_RETRACTION_FOUND"
+    RETRACTION_SUSPECTED = "RETRACTION_SUSPECTED"
 
 
 class Citation(BaseModel):
@@ -42,10 +51,15 @@ class VerificationResult(BaseModel):
     claim: Optional[ContextClaim] = None
     status: VerificationStatus
     risk_level: RiskLevel
+    evidence_status: Optional[EvidenceStatus] = None  # 细粒度证据/基础设施状态
+    failure_reason: Optional[str] = None               # TIMEOUT / RATE_LIMITED / PROXY_ERROR
     verified_title: Optional[str] = None
     verified_doi: Optional[str] = None
     retraction_info: Optional[str] = None
     abstract_tldr: Optional[str] = None
+    evidence_text: Optional[str] = None                # 精准提炼的证据片段
+    evidence_granularity: Optional[str] = None         # "SENTENCE" | "CLAUSE" | "EXPANDED_WINDOW"
+    semantic_mode: Optional[str] = None                # "CORE" | "FULL" | "CORE_FALLBACK"
     reference_confidence: Optional[float] = None  # 0.0 ~ 1.0 文献元数据匹配置信度
     claim_alignment_score: Optional[float] = None  # 0.0 ~ 1.0 语义对齐得分
     alignment_state: Optional[str] = None  # "SUPPORTED" | "PARTIAL" | "NEUTRAL" | "CONTRADICTED" | "UNVERIFIED"

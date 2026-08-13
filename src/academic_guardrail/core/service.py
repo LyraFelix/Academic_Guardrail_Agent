@@ -188,14 +188,26 @@ class AuditService:
                         risk = RiskLevel.WARNING
                         msg = "🟡 内部警告：断言对齐状态未知，请手工确认。"
 
+        ev_status = verify_res.get("evidence_status")
+        if not ev_status:
+            ev_status = "PROVIDER_UNAVAILABLE" if verify_res.get("failure_reason") else ("ARTICLE_MATCHED" if is_matched else "NOT_FOUND")
+
+        ev_text = best_sent or target_abstract or verify_res.get("abstract")
+        ev_granularity = "SENTENCE" if best_sent else ("FULL_ABSTRACT" if target_abstract else None)
+
         return VerificationResult(
             citation=cit,
             claim=claim,
             status=status,
             risk_level=risk,
+            evidence_status=ev_status,
+            failure_reason=verify_res.get("failure_reason"),
             verified_title=verify_res.get("title"),
             verified_doi=verify_res.get("doi"),
-            abstract_tldr=best_sent or target_abstract or verify_res.get("abstract"),
+            abstract_tldr=ev_text,
+            evidence_text=ev_text,
+            evidence_granularity=ev_granularity,
+            semantic_mode="CORE",
             reference_confidence=ref_confidence,
             claim_alignment_score=score,
             alignment_state=alignment_state,
