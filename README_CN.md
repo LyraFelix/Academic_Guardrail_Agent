@@ -84,9 +84,9 @@ academic-guardrail audit "调查.docx" -r "./references" -b -o report.html
 4. **极致性能与并发处理 (Performance Benchmark)**:
    - **单条断言判定时延**: 算法纯内存判定时延约 **0.36 ms**。
    - **50 条文献大样本审计并发完成时间**: 依靠 `asyncio.gather` 并发网络查证，整篇 50 条文献论文审计全过程仅需 **< 1.5 秒**。
-5. **本地参考文献原文库提取 (`--refs-dir` / `-r`)**:
-   - 支持传入用户自定义的本地参考文献文件夹（`.pdf`, `.docx`, `.txt`）。
-   - 当线上公网数据库缺少 Abstract 文本时，系统自动读取本地全篇原文（支持多页 PDF）进行句子级断言比对。
+5. **双轨文献核验与本地原文库协同机制 (`Dual-Track Online & Local Store`)**:
+   - **在线全自动核验（默认推荐，无需下载任何 PDF）**：针对公开发表的中英文核心文献（具备 DOI 或被 OpenAlex / Crossref / Semantic Scholar 索引），系统自动在线并发抓取元数据与摘要，秒级完成消歧对齐。
+   - **本地原文库兜底 (`-r / --refs-dir`)**：针对 **付费墙限制、私有内部手稿、无公网摘要的冷门文献、或 100% 离线断网保密环境**，支持传入用户本地下载的参考文献文件夹（`.pdf`, `.docx`, `.txt`）。系统优先利用本地 PDF 全文进行精准断言对齐，实现零网络泄露与 100% 证据闭环。
 6. **离线高阶 HTML 报告与网络重试保障 (`Offline Glassmorphism UI & trust_env`)**:
    - HTML 报告包含全内联样式与系统备选字体，在 **100% 断网无网络环境** 下亦可完美渲染与搜索过滤。
    - 内部 HTTP 客户端配置 `trust_env=True` 与 OpenAlex Polite Pool 请求头，自动读取系统代理，解决国内网络连接超时与 429 Rate Limit 问题。

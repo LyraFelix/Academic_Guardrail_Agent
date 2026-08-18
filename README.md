@@ -84,9 +84,9 @@ Report output to: report.html
 4. **Performance Benchmarks**:
    - **Per-Claim Decision Latency**: Memory-based hybrid claim matching takes **~0.36 ms** per claim.
    - **50-Citation Audit Execution Time**: Concurrent batch querying via `asyncio.gather` completes a full 50-citation manuscript audit in **< 1.5 seconds**.
-5. **Local Reference Paper Extractor (`--refs-dir` / `-r`)**:
-   - Accepts user-supplied directories of reference PDFs, DOCX, or TXT files.
-   - Scans multi-page PDF full text to perform sentence-level claim alignment when online APIs lack abstracts.
+5. **Dual-Track Verification Architecture (`Online Auto-Resolution & Local Store Fallback`)**:
+   - **Zero-Setup Online Verification (Default)**: For published literature indexed across OpenAlex, Semantic Scholar, or Crossref, the system automatically resolves citations and extracts sentence rationales online in seconds—**no local PDF downloads required**.
+   - **Local Reference Store (`-r / --refs-dir`)**: For **paywalled papers, private draft manuscripts, air-gapped confidential environments, or un-indexed literature**, users can supply a local folder of reference PDFs, DOCX, or TXT files. The system directly parses full-text PDFs locally on CPU for 100% air-gapped zero-data-leakage claim verification.
 6. **Air-Gapped HTML Report & Tri-State Verification Safety**:
    - Disables false-positive core journal endorsements by returning a neutral **Tri-State (`matched = None`, `JOURNAL_MATCHED_ARTICLE_UNVERIFIED`)** when only journal names match without an verified article record.
    - The generated HTML report contains zero external CDN dependencies, using system font fallbacks to render and filter perfectly in 100% air-gapped offline environments.
