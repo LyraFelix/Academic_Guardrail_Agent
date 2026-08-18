@@ -52,90 +52,148 @@ class ReportGenerator:
         return "\n".join(md)
 
     def generate_html(self, report: DocumentAuditReport) -> str:
-        # Build cards for risk items
+        import os
+        doc_name = html.escape(os.path.basename(report.document_path))
+        pass_pct = round((report.passed_count / max(report.total_citations, 1)) * 100, 1)
+
+        # Build citation cards
         cards_html = []
         for r in report.results:
             risk_type = r.risk_level.name.lower()  # pass, notice, warning, danger
-            badge_class = f"badge-{risk_type}"
             badge_text = r.risk_level.value
             title = html.escape(r.verified_title or r.citation.title or r.citation.raw_text[:70])
-            
-            doi_link = ""
+            cit_id = html.escape(r.citation.id)
+
             doi_val = r.verified_doi or r.citation.doi
             if doi_val and not doi_val.startswith("cnki.local"):
-                doi_link = f'<a href="https://doi.org/{doi_val}" target="_blank" class="doi-link">DOI: {html.escape(doi_val)} ↗</a>'
+                doi_link = f'<a href="https://doi.org/{html.escape(doi_val)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-xs font-mono font-medium text-sky-500 hover:text-sky-400 hover:underline">DOI: {html.escape(doi_val)} <span class="text-[10px]">↗</span></a>'
             elif doi_val:
-                doi_link = f'<span class="doi-tag">📚 本地文献 / CSCD / CSSCI 索引</span>'
+                doi_link = '<span class="inline-flex items-center gap-1 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">📚 本地文献 / CSCD / CSSCI 索引</span>'
+            else:
+                doi_link = '<span class="text-xs text-slate-400">无 DOI 记录</span>'
 
+            # 5-score breakdown badges
+            score_badges = ""
+            if r.resolution_metadata:
+                rm = r.resolution_metadata
+                score_badges = f'''
+                <div class="flex flex-wrap gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400 pt-1">
+                    <span class="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Title: <strong class="text-slate-700 dark:text-slate-200">{rm.get('title_score', 'N/A')}</strong></span>
+                    <span class="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Author: <strong class="text-slate-700 dark:text-slate-200">{rm.get('author_score', 'N/A')}</strong></span>
+                    <span class="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Year: <strong class="text-slate-700 dark:text-slate-200">{rm.get('year_score', 'N/A')}</strong></span>
+                    <span class="bg-slate-100 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">Margin: <strong class="text-slate-700 dark:text-slate-200">{rm.get('rank_margin', 'N/A')}</strong></span>
+                </div>
+                '''
+
+            # Claim box
             claim_box = ""
             if r.claim:
                 claim_box = f'''
-                <div class="claim-box">
-                    <div class="box-header">
-                        <span class="box-icon">📌</span>
-                        <span class="box-title">正文断言引用句：</span>
+                <div class="mt-3 p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                    <div class="flex items-center gap-1.5 text-xs font-semibold text-sky-600 dark:text-sky-400 uppercase tracking-wider mb-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span>正文断言原句 (Manuscript Claim)</span>
                     </div>
-                    <blockquote class="claim-quote">“{html.escape(r.claim.claim_sentence)}”</blockquote>
+                    <blockquote class="text-sm italic text-slate-700 dark:text-slate-300 leading-relaxed font-serif pl-2 border-l-2 border-sky-400 dark:border-sky-500/50">
+                        “{html.escape(r.claim.claim_sentence)}”
+                    </blockquote>
                 </div>
                 '''
 
-            tldr_box = ""
-            if r.abstract_tldr:
-                tldr_box = f'''
-                <div class="abstract-box">
-                    <div class="box-header">
-                        <span class="box-icon">🔍</span>
-                        <span class="box-title">被引文献匹配核心摘要/最匹配单句：</span>
+            # Evidence Text / Abstract box
+            ev_box = ""
+            ev_text = r.evidence_text or r.abstract_tldr
+            granularity = r.evidence_granularity or "SENTENCE"
+            if ev_text:
+                ev_box = f'''
+                <div class="mt-2.5 p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/60 dark:border-emerald-800/40">
+                    <div class="flex items-center justify-between text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1.5">
+                        <span class="flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span>被引文献精准证据原文 (Evidence Rationale)</span>
+                        </span>
+                        <span class="text-[10px] font-mono px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/60 rounded text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/50">[{granularity}]</span>
                     </div>
-                    <p class="abstract-text">{html.escape(r.abstract_tldr)}</p>
+                    <p class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-serif">
+                        {html.escape(ev_text)}
+                    </p>
                 </div>
                 '''
 
+            # Ambiguous candidates box
             amb_box = ""
             if r.ambiguous_candidates:
                 amb_rows = []
                 for c in r.ambiguous_candidates:
                     c_title = html.escape(c.get("title", ""))
-                    c_doi = f'<a href="https://doi.org/{c["doi"]}" target="_blank" class="meta-link">{html.escape(c["doi"])}</a>' if c.get("doi") else "无 DOI"
+                    c_doi = f'<a href="https://doi.org/{html.escape(c["doi"])}" target="_blank" class="text-sky-500 underline font-mono">{html.escape(c["doi"])}</a>' if c.get("doi") else "无 DOI"
                     c_score = f'{c.get("score", 0.0):.2f}'
                     c_src = html.escape(c.get("source", ""))
-                    amb_rows.append(f'<tr><td style="padding:4px;">{c_title}</td><td style="padding:4px;">{c_doi}</td><td style="padding:4px;"><code>{c_score}</code></td><td style="padding:4px;">{c_src}</td></tr>')
+                    amb_rows.append(f'<tr class="border-b border-slate-200 dark:border-slate-800"><td class="p-2">{c_title}</td><td class="p-2">{c_doi}</td><td class="p-2 font-mono font-semibold text-amber-500">{c_score}</td><td class="p-2">{c_src}</td></tr>')
                 amb_table = "\n".join(amb_rows)
                 amb_box = f'''
-                <div class="ambiguous-candidates-box" style="margin-top:12px; background:rgba(234,179,8,0.1); border:1px solid rgba(234,179,8,0.3); border-radius:8px; padding:12px;">
-                    <div style="font-weight:600; color:#facc15; margin-bottom:8px; font-size:13px;">⚠️ 检测到以下极相似冲突文献 (得分差值 < 5%)：</div>
-                    <table style="width:100%; font-size:12px; border-collapse:collapse; color:#cbd5e1;">
-                        <thead>
-                            <tr style="text-align:left; border-bottom:1px solid rgba(255,255,255,0.1);">
-                                <th style="padding:4px;">候选标题</th>
-                                <th style="padding:4px;">DOI</th>
-                                <th style="padding:4px;">匹配得分</th>
-                                <th style="padding:4px;">数据来源</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {amb_table}
-                        </tbody>
-                    </table>
+                <div class="mt-3 p-3.5 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-800/40">
+                    <div class="text-xs font-semibold text-amber-800 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <span>⚠️ 候选消歧冲突 (Top-2 候选差值 &lt; 5%)</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs text-left text-slate-600 dark:text-slate-300">
+                            <thead class="bg-amber-100/50 dark:bg-amber-900/40 text-amber-900 dark:text-amber-200 font-semibold">
+                                <tr>
+                                    <th class="p-2">候选标题</th>
+                                    <th class="p-2">DOI</th>
+                                    <th class="p-2">匹配得分</th>
+                                    <th class="p-2">数据来源</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {amb_table}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
                 '''
 
+            # Status pill styling
+            if r.risk_level == RiskLevel.PASS:
+                card_border = "border-l-4 border-l-emerald-500 hover:border-emerald-500/80"
+                badge_style = "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800"
+            elif r.risk_level == RiskLevel.NOTICE:
+                card_border = "border-l-4 border-l-sky-500 hover:border-sky-500/80"
+                badge_style = "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-300 dark:border-sky-800"
+            elif r.risk_level == RiskLevel.WARNING:
+                card_border = "border-l-4 border-l-amber-500 hover:border-amber-500/80"
+                badge_style = "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300 dark:border-amber-800"
+            else:
+                card_border = "border-l-4 border-l-rose-500 hover:border-rose-500/80 shadow-rose-500/10 shadow-lg"
+                badge_style = "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-300 dark:border-rose-800 font-bold animate-pulse"
+
             card = f'''
-            <div class="citation-card card-{risk_type}" data-risk="{risk_type}" data-search="{html.escape(title.lower())}">
-                <div class="card-header">
-                    <h3 class="paper-title">{title}</h3>
-                    <span class="badge {badge_class}">{badge_text}</span>
+            <article class="citation-card {card_border} bg-white dark:bg-slate-800/80 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/60 shadow-sm hover:shadow-md transition-all duration-200 mb-4" data-risk="{risk_type}" data-search="{html.escape((title + ' ' + (cit_id) + ' ' + (r.message)).lower())}">
+                <div class="flex flex-wrap items-start justify-between gap-3 mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">[{cit_id}]</span>
+                        <h3 class="text-base font-semibold text-slate-900 dark:text-white leading-snug">{title}</h3>
+                    </div>
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded-full border {badge_style} uppercase tracking-wider">{badge_text}</span>
                 </div>
-                <div class="card-meta">
-                    <span class="meta-item">📍 位置：{html.escape(r.citation.location_info or '文档正文')}</span>
-                    <span class="meta-item">🏷️ 状态：<code>{html.escape(r.status.value)}</code></span>
+                
+                <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mb-2.5">
+                    <span class="flex items-center gap-1">📍 {html.escape(r.citation.location_info or '文档正文')}</span>
+                    <span class="flex items-center gap-1">🏷️ 状态: <code class="font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300">{html.escape(r.status.value)}</code></span>
                     {doi_link}
                 </div>
-                <div class="card-msg" style="white-space: pre-wrap;">{html.escape(r.message)}</div>
+
+                <div class="text-xs md:text-sm text-slate-600 dark:text-slate-300 bg-slate-50/50 dark:bg-slate-900/30 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/60 font-sans leading-relaxed">
+                    {html.escape(r.message)}
+                </div>
+
+                {score_badges}
                 {amb_box}
                 {claim_box}
-                {tldr_box}
-            </div>
+                {ev_box}
+            </article>
             '''
             cards_html.append(card)
 
@@ -143,461 +201,310 @@ class ReportGenerator:
         rows_html = []
         for r in report.results:
             risk_type = r.risk_level.name.lower()
-            badge_class = f"badge-{risk_type}"
             title = html.escape(r.verified_title or r.citation.title or r.citation.raw_text[:50])
+            cit_id = html.escape(r.citation.id)
+
+            if r.risk_level == RiskLevel.PASS:
+                badge_style = "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
+            elif r.risk_level == RiskLevel.NOTICE:
+                badge_style = "bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 border-sky-200 dark:border-sky-800"
+            elif r.risk_level == RiskLevel.WARNING:
+                badge_style = "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+            else:
+                badge_style = "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800 font-bold"
+
             row = f'''
-            <tr data-risk="{risk_type}" data-search="{html.escape(title.lower())}">
-                <td><code class="code-id">{html.escape(r.citation.id)}</code></td>
-                <td><strong class="tbl-title">{title}</strong></td>
-                <td><code class="status-tag">{html.escape(r.status.value)}</code></td>
-                <td><span class="badge {badge_class}">{r.risk_level.value}</span></td>
-                <td class="tbl-msg">{html.escape(r.message)}</td>
+            <tr class="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors" data-risk="{risk_type}" data-search="{html.escape((title + ' ' + cit_id).lower())}">
+                <td class="p-3 font-mono text-xs font-semibold text-sky-600 dark:text-sky-400">{cit_id}</td>
+                <td class="p-3 font-medium text-slate-900 dark:text-slate-100 max-w-xs truncate">{title}</td>
+                <td class="p-3 font-mono text-xs text-slate-600 dark:text-slate-300">{html.escape(r.status.value)}</td>
+                <td class="p-3"><span class="text-xs px-2 py-0.5 rounded-full border {badge_style} font-medium">{r.risk_level.value}</span></td>
+                <td class="p-3 text-xs text-slate-500 dark:text-slate-400 max-w-sm truncate">{html.escape(r.message)}</td>
             </tr>
             '''
             rows_html.append(row)
 
         full_cards = "\n".join(cards_html)
         full_rows = "\n".join(rows_html)
-        import os
-        doc_name = html.escape(os.path.basename(report.document_path))
 
         html_template = f"""<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🛡️ 学术引用与断言审查报告 - Academic Guardrail</title>
-    <title>🛡️ 学术引用与断言审查报告 - Academic Guardrail</title>
+    <title>🛡️ 学术论文引用与断言审查报告 - Academic Guardrail</title>
+    <!-- Tailwind CSS with Typography -->
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <script>
+        tailwind.config = {{
+            darkMode: 'class',
+            theme: {{
+                extend: {{
+                    fontFamily: {{
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'PingFang SC', 'Microsoft YaHei', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+                        serif: ['Charter', 'Georgia', 'Cambria', 'Songti SC', 'SimSun', 'serif'],
+                    }},
+                    colors: {{
+                        slate: {{
+                            950: '#0b0f19',
+                        }}
+                    }}
+                }}
+            }}
+        }}
+    </script>
+    <!-- KaTeX CSS & JS for Academic Math Formula Rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
     <style>
+        /* Fallback styling for air-gapped / offline resilience */
         :root {{
-            --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-            --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --border-color: #e2e8f0;
+        }}
+        .dark {{
             --bg-color: #0b0f19;
-            --card-bg: rgba(20, 27, 45, 0.75);
-            --card-hover: rgba(30, 41, 69, 0.85);
+            --card-bg: #1e293b;
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
-            --text-muted: #64748b;
-            --border-color: rgba(255, 255, 255, 0.08);
-            --border-highlight: rgba(255, 255, 255, 0.15);
-            
-            --pass-glow: rgba(16, 185, 129, 0.25);
-            --pass-color: #10b981;
-            --pass-bg: rgba(16, 185, 129, 0.12);
-            --pass-border: #10b981;
-
-            --notice-glow: rgba(56, 189, 248, 0.25);
-            --notice-color: #38bdf8;
-            --notice-bg: rgba(56, 189, 248, 0.12);
-            --notice-border: #38bdf8;
-
-            --warning-glow: rgba(251, 191, 36, 0.25);
-            --warning-color: #fbbf24;
-            --warning-bg: rgba(251, 191, 36, 0.12);
-            --warning-border: #fbbf24;
-
-            --danger-glow: rgba(244, 63, 94, 0.3);
-            --danger-color: #f43f5e;
-            --danger-bg: rgba(244, 63, 94, 0.15);
-            --danger-border: #f43f5e;
+            --border-color: #334155;
         }}
-
-        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
-            font-family: var(--font-main);
             background-color: var(--bg-color);
-            background-image: 
-                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.08) 0px, transparent 50%),
-                radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 50%),
-                radial-gradient(at 50% 100%, rgba(244, 63, 94, 0.05) 0px, transparent 50%);
-            background-attachment: fixed;
             color: var(--text-primary);
-            line-height: 1.6;
-            padding: 40px 24px;
-            min-height: 100vh;
+            font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
         }}
-
-        .container {{ max-width: 1100px; margin: 0 auto; }}
-
-        /* Top Header */
-        .header {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            border-radius: 20px;
-            padding: 28px 32px;
-            margin-bottom: 28px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 20px;
-        }}
-        .header-main {{ flex: 1; min-width: 280px; }}
-        .header-title {{ 
-            font-size: 28px; 
-            font-weight: 800; 
-            color: #ffffff; 
-            display: flex; 
-            align-items: center; 
-            gap: 12px;
-            letter-spacing: -0.5px;
-        }}
-        .header-badge {{
-            background: linear-gradient(135deg, #38bdf8, #818cf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }}
-        .subtitle {{ 
-            color: var(--text-secondary); 
-            font-size: 14px; 
-            margin-top: 8px; 
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }}
-        .doc-path {{
-            font-family: 'JetBrains Mono', monospace;
-            background: rgba(255, 255, 255, 0.06);
-            padding: 3px 8px;
-            border-radius: 6px;
-            color: #38bdf8;
-            border: 1px solid rgba(56, 189, 248, 0.2);
-            font-size: 13px;
-        }}
-
-        /* Summary Dashboard Cards */
-        .summary-grid {{
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 16px;
-            margin-bottom: 28px;
-        }}
-        .stat-card {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-radius: 16px;
-            padding: 20px 24px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }}
-        .stat-card::before {{
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; height: 3px;
-            background: var(--border-color);
-        }}
-        .stat-card:hover {{
-            transform: translateY(-3px);
-            border-color: var(--border-highlight);
-        }}
-        
-        .stat-card.sc-total::before {{ background: linear-gradient(90deg, #38bdf8, #818cf8); }}
-        .stat-card.sc-pass::before {{ background: var(--pass-color); box-shadow: 0 0 10px var(--pass-color); }}
-        .stat-card.sc-warning::before {{ background: var(--warning-color); box-shadow: 0 0 10px var(--warning-color); }}
-        .stat-card.sc-danger::before {{ background: var(--danger-color); box-shadow: 0 0 10px var(--danger-color); }}
-
-        .stat-num {{ 
-            font-size: 36px; 
-            font-weight: 800; 
-            line-height: 1; 
-            margin-bottom: 6px; 
-            letter-spacing: -1px;
-        }}
-        .stat-label {{ font-size: 13px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }}
-
-        .c-total {{ color: #ffffff; }}
-        .c-pass {{ color: var(--pass-color); text-shadow: 0 0 12px var(--pass-glow); }}
-        .c-notice {{ color: var(--notice-color); text-shadow: 0 0 12px var(--notice-glow); }}
-        .c-warning {{ color: var(--warning-color); text-shadow: 0 0 12px var(--warning-glow); }}
-        .c-danger {{ color: var(--danger-color); text-shadow: 0 0 12px var(--danger-glow); }}
-
-        /* Filter Controls */
-        .controls-bar {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            padding: 14px 20px;
-            margin-bottom: 24px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 16px;
-        }}
-        .filter-tabs {{ display: flex; gap: 8px; flex-wrap: wrap; }}
-        .filter-btn {{
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            padding: 8px 16px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }}
-        .filter-btn:hover {{ background: rgba(255, 255, 255, 0.08); color: #fff; }}
-        .filter-btn.active {{
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2));
-            border-color: #38bdf8;
-            color: #ffffff;
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
-        }}
-
-        .search-box {{
-            position: relative;
-            flex: 1;
-            max-width: 320px;
-            min-width: 200px;
-        }}
-        .search-input {{
-            width: 100%;
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 8px 14px 8px 36px;
-            color: #fff;
-            font-size: 13px;
-            outline: none;
-            transition: all 0.2s ease;
-        }}
-        .search-input:focus {{
-            border-color: #38bdf8;
-            box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
-        }}
-        .search-icon {{
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-muted);
-            font-size: 13px;
-        }}
-
-        .section-title {{
-            font-size: 20px;
-            font-weight: 700;
-            margin: 32px 0 16px 0;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: #ffffff;
-            letter-spacing: -0.3px;
-        }}
-
-        /* Citation Cards */
-        .citation-card {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-radius: 16px;
-            padding: 24px;
-            margin-bottom: 18px;
-            border: 1px solid var(--border-color);
-            border-left-width: 6px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-        }}
-        .citation-card:hover {{
-            transform: translateY(-2px);
-            background: var(--card-hover);
-            border-color: var(--border-highlight);
-        }}
-
-        .card-pass {{ border-left-color: var(--pass-border); }}
-        .card-notice {{ border-left-color: var(--notice-border); }}
-        .card-warning {{ border-left-color: var(--warning-border); }}
-        .card-danger {{ border-left-color: var(--danger-border); box-shadow: 0 0 20px var(--danger-glow); }}
-
-        .card-header {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }}
-        .paper-title {{ font-size: 17px; font-weight: 700; color: #ffffff; line-height: 1.4; }}
-
-        .badge {{
-            padding: 5px 12px;
-            border-radius: 30px;
-            font-size: 12px;
-            font-weight: 700;
-            white-space: nowrap;
-            letter-spacing: 0.3px;
-            text-transform: uppercase;
-        }}
-        .badge-pass {{ background: var(--pass-bg); color: var(--pass-color); border: 1px solid var(--pass-border); box-shadow: 0 0 10px var(--pass-glow); }}
-        .badge-notice {{ background: var(--notice-bg); color: var(--notice-color); border: 1px solid var(--notice-border); box-shadow: 0 0 10px var(--notice-glow); }}
-        .badge-warning {{ background: var(--warning-bg); color: var(--warning-color); border: 1px solid var(--warning-border); box-shadow: 0 0 10px var(--warning-glow); }}
-        .badge-danger {{ background: var(--danger-bg); color: var(--danger-color); border: 1px solid var(--danger-border); box-shadow: 0 0 10px var(--danger-glow); }}
-
-        .card-meta {{ display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; align-items: center; }}
-        .card-meta code {{ font-family: 'JetBrains Mono', monospace; background: rgba(255, 255, 255, 0.06); padding: 2px 8px; border-radius: 4px; color: #e2e8f0; }}
-        .doi-link {{ color: #38bdf8; text-decoration: none; font-weight: 600; transition: color 0.2s ease; }}
-        .doi-link:hover {{ color: #7dd3fc; text-decoration: underline; }}
-        .doi-tag {{ background: rgba(255, 255, 255, 0.05); padding: 3px 10px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); border: 1px solid var(--border-color); }}
-
-        .card-msg {{ font-size: 14px; font-weight: 500; margin-bottom: 14px; color: #cbd5e1; line-height: 1.6; }}
-
-        .claim-box {{
-            background: rgba(15, 23, 42, 0.6);
-            border-radius: 12px;
-            padding: 14px 18px;
-            border: 1px dashed rgba(56, 189, 248, 0.3);
-            margin-top: 12px;
-        }}
-        .box-header {{ display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }}
-        .box-icon {{ font-size: 14px; }}
-        .box-title {{ font-size: 12px; font-weight: 700; color: #38bdf8; text-transform: uppercase; letter-spacing: 0.5px; }}
-        .claim-quote {{ font-size: 13.5px; color: #e2e8f0; font-style: italic; line-height: 1.6; margin: 0; }}
-
-        .abstract-box {{
-            background: rgba(16, 185, 129, 0.06);
-            border: 1px solid rgba(16, 185, 129, 0.2);
-            border-radius: 12px;
-            padding: 14px 18px;
-            margin-top: 10px;
-        }}
-        .abstract-box .box-title {{ color: #34d399; }}
-        .abstract-text {{ font-size: 13.5px; color: #cbd5e1; margin-top: 4px; line-height: 1.6; }}
-
-        /* Details Table */
-        .table-wrap {{
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            border-radius: 16px;
-            border: 1px solid var(--border-color);
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 14px;
-        }}
-        th {{
-            background: rgba(255, 255, 255, 0.03);
-            padding: 16px 20px;
-            font-size: 12px;
-            font-weight: 700;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid var(--border-color);
-        }}
-        td {{
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-secondary);
-        }}
-        tr:last-child td {{ border-bottom: none; }}
-        tr:hover td {{ background: rgba(255, 255, 255, 0.02); }}
-        .code-id {{ font-family: 'JetBrains Mono', monospace; color: #38bdf8; font-weight: 600; }}
-        .tbl-title {{ color: #ffffff; font-weight: 600; }}
-        .status-tag {{ font-family: 'JetBrains Mono', monospace; font-size: 12px; background: rgba(255, 255, 255, 0.06); padding: 3px 8px; border-radius: 4px; color: #cbd5e1; }}
-        .tbl-msg {{ font-size: 13px; max-width: 300px; color: var(--text-secondary); }}
-
-        .footer {{
-            text-align: center;
-            margin-top: 40px;
-            color: var(--text-muted);
-            font-size: 13px;
-        }}
-        .footer a {{ color: #38bdf8; text-decoration: none; font-weight: 600; }}
-        .footer a:hover {{ text-decoration: underline; }}
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
+        ::-webkit-scrollbar-track {{ background: transparent; }}
+        ::-webkit-scrollbar-thumb {{ background: rgba(148, 163, 184, 0.4); border-radius: 9999px; }}
+        ::-webkit-scrollbar-thumb:hover {{ background: rgba(148, 163, 184, 0.6); }}
     </style>
 </head>
-<body>
-    <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-main">
-                <h1 class="header-title">
-                    <span>🛡️</span>
-                    <span>学术论文引用与断言审查报告</span>
-                    <span class="header-badge">v0.1.0</span>
-                </h1>
-                <div class="subtitle">
-                    <span>📄 审计文档：</span>
-                    <span class="doc-path">{doc_name}</span>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+    
+    <!-- Top Navigation Bar -->
+    <header class="border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+                        Academic Guardrail
+                        <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300 border border-sky-200 dark:border-sky-800">v0.1.0</span>
+                    </h1>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">学术论文引用真实性与断言对齐审查报告</p>
                 </div>
             </div>
-        </header>
 
-        <!-- Summary Metric Cards -->
-        <section class="summary-grid">
-            <div class="stat-card sc-total">
-                <div class="stat-num c-total">{report.total_citations}</div>
-                <div class="stat-label">文献引用总数</div>
-            </div>
-            <div class="stat-card sc-pass">
-                <div class="stat-num c-pass">{report.passed_count}</div>
-                <div class="stat-label">严格吻合 (PASS)</div>
-            </div>
-            <div class="stat-card sc-notice">
-                <div class="stat-num c-notice">{report.notice_count}</div>
-                <div class="stat-label">补充证据 (NOTICE)</div>
-            </div>
-            <div class="stat-card sc-warning">
-                <div class="stat-num c-warning">{report.warning_count}</div>
-                <div class="stat-label">未查证 (WARNING)</div>
-            </div>
-            <div class="stat-card sc-danger">
-                <div class="stat-num c-danger">{report.danger_count}</div>
-                <div class="stat-label">撤稿/矛盾 (DANGER)</div>
-            </div>
-        </section>
-
-        <!-- Dynamic Controls Bar -->
-        <div class="controls-bar">
-            <div class="filter-tabs">
-                <button class="filter-btn active" onclick="filterRisk('all', this)">全部 ({report.total_citations})</button>
-                <button class="filter-btn" onclick="filterRisk('pass', this)">🟢 合格 ({report.passed_count})</button>
-                <button class="filter-btn" onclick="filterRisk('notice', this)">🔵 提示 ({report.notice_count})</button>
-                <button class="filter-btn" onclick="filterRisk('warning', this)">🟡 警告 ({report.warning_count})</button>
-                <button class="filter-btn" onclick="filterRisk('danger', this)">🔴 高危 ({report.danger_count})</button>
-            </div>
-            <div class="search-box">
-                <span class="search-icon">🔍</span>
-                <input type="text" class="search-input" id="searchInput" placeholder="搜索文献标题或关键词..." oninput="handleSearch()">
+            <div class="flex items-center gap-3">
+                <button onclick="toggleTheme()" class="p-2 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors" title="切换暗黑/明亮模式">
+                    <svg id="themeIconSun" class="w-4 h-4 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                    <svg id="themeIconMoon" class="w-4 h-4 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                </button>
             </div>
         </div>
+    </header>
 
-        <!-- Citation Cards Section -->
-        <h2 class="section-title">✨ 引用审计与内容一致性卡片明细</h2>
-        <section id="cardsContainer">
-            {full_cards}
-        </section>
+    <!-- Main Container with Responsive TOC Layout -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- Sticky Table of Contents (TOC) Sidebar -->
+            <aside class="hidden lg:block lg:col-span-3 sticky top-24 space-y-6">
+                <div class="bg-white dark:bg-slate-900/90 rounded-2xl p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+                        报告导航 (Contents)
+                    </h2>
+                    <nav class="space-y-1 text-sm font-medium">
+                        <a href="#sec-overview" class="toc-link block px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            1. 核心指标概览 (KPIs)
+                        </a>
+                        <a href="#sec-distribution" class="toc-link block px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            2. 风险与合规分布 (Matrix)
+                        </a>
+                        <a href="#sec-cards" class="toc-link block px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            3. 引用与证据对齐卡片 (Cards)
+                        </a>
+                        <a href="#sec-table" class="toc-link block px-3 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                            4. 全量核查明细表格 (Table)
+                        </a>
+                    </nav>
 
-        <!-- Details Table Section -->
-        <h2 class="section-title">📋 全量文献核查汇总表格</h2>
-        <div class="table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>引用ID</th>
-                        <th>文献标题 / 引用摘要</th>
-                        <th>状态</th>
-                        <th>风险等级</th>
-                        <th>核查处置说明</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody">
-                    {full_rows}
-                </tbody>
-            </table>
+                    <div class="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800">
+                        <div class="text-xs text-slate-400 dark:text-slate-500 space-y-1.5">
+                            <div>📄 审计对象: <span class="font-mono text-slate-700 dark:text-slate-300 font-semibold">{doc_name}</span></div>
+                            <div>⚙️ 引擎: <span class="font-mono text-slate-700 dark:text-slate-300 font-semibold">Dual-Track CPU Core</span></div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content Body -->
+            <div class="lg:col-span-9 space-y-8">
+                
+                <!-- Section 1: Overview & Hero KPI Cards -->
+                <section id="sec-overview" class="scroll-mt-24 space-y-6">
+                    <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+                        <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+                            <div>
+                                <span class="text-xs font-mono font-semibold uppercase tracking-wider text-sky-400 bg-sky-950/60 border border-sky-800/80 px-2.5 py-1 rounded-full">Executive Summary</span>
+                                <h2 class="text-2xl sm:text-3xl font-bold tracking-tight mt-2 text-white">手稿学术引用与断言审计概览</h2>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-xs text-slate-400">综合合规率 (Pass Rate)</span>
+                                <div class="text-3xl font-bold font-mono text-emerald-400">{pass_pct}%</div>
+                            </div>
+                        </div>
+
+                        <!-- Progress Bar -->
+                        <div class="w-full bg-slate-800/90 rounded-full h-3 mb-6 p-0.5 overflow-hidden flex">
+                            <div class="bg-emerald-500 h-full rounded-l-full" style="width: {(report.passed_count / max(report.total_citations, 1)) * 100}%" title="PASS"></div>
+                            <div class="bg-sky-400 h-full" style="width: {(report.notice_count / max(report.total_citations, 1)) * 100}%" title="NOTICE"></div>
+                            <div class="bg-amber-400 h-full" style="width: {(report.warning_count / max(report.total_citations, 1)) * 100}%" title="WARNING"></div>
+                            <div class="bg-rose-500 h-full rounded-r-full" style="width: {(report.danger_count / max(report.total_citations, 1)) * 100}%" title="DANGER"></div>
+                        </div>
+
+                        <!-- Stat Grid Cards -->
+                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                            <div class="bg-slate-800/60 backdrop-blur rounded-2xl p-4 border border-slate-700/50">
+                                <div class="text-xs font-medium text-slate-400">文献引用总数</div>
+                                <div class="text-2xl font-mono font-bold text-white mt-1">{report.total_citations}</div>
+                            </div>
+                            <div class="bg-emerald-950/30 backdrop-blur rounded-2xl p-4 border border-emerald-800/40">
+                                <div class="text-xs font-medium text-emerald-300">严格吻合 (PASS)</div>
+                                <div class="text-2xl font-mono font-bold text-emerald-400 mt-1">{report.passed_count}</div>
+                            </div>
+                            <div class="bg-sky-950/30 backdrop-blur rounded-2xl p-4 border border-sky-800/40">
+                                <div class="text-xs font-medium text-sky-300">补充提示 (NOTICE)</div>
+                                <div class="text-2xl font-mono font-bold text-sky-400 mt-1">{report.notice_count}</div>
+                            </div>
+                            <div class="bg-amber-950/30 backdrop-blur rounded-2xl p-4 border border-amber-800/40">
+                                <div class="text-xs font-medium text-amber-300">待查警告 (WARNING)</div>
+                                <div class="text-2xl font-mono font-bold text-amber-400 mt-1">{report.warning_count}</div>
+                            </div>
+                            <div class="bg-rose-950/30 backdrop-blur rounded-2xl p-4 border border-rose-800/40 col-span-2 sm:col-span-1">
+                                <div class="text-xs font-medium text-rose-300">撤稿/高危 (DANGER)</div>
+                                <div class="text-2xl font-mono font-bold text-rose-400 mt-1">{report.danger_count}</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 2: Interactive Controls & Search Bar -->
+                <section id="sec-distribution" class="scroll-mt-24 space-y-4">
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                        <!-- Risk Filter Pills -->
+                        <div class="flex flex-wrap items-center gap-1.5" id="filterPills">
+                            <button onclick="filterRisk('all', this)" class="filter-pill active px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 text-white dark:bg-white dark:text-slate-950 transition-all">全部 ({report.total_citations})</button>
+                            <button onclick="filterRisk('pass', this)" class="filter-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">🟢 合格 ({report.passed_count})</button>
+                            <button onclick="filterRisk('notice', this)" class="filter-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">🔵 提示 ({report.notice_count})</button>
+                            <button onclick="filterRisk('warning', this)" class="filter-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">🟡 警告 ({report.warning_count})</button>
+                            <button onclick="filterRisk('danger', this)" class="filter-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">🔴 高危 ({report.danger_count})</button>
+                        </div>
+
+                        <!-- Search Input -->
+                        <div class="relative w-full sm:w-72">
+                            <svg class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <input type="text" id="searchInput" oninput="handleSearch()" placeholder="搜索文献标题、断言或 DOI..." class="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-1.5 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500/50">
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Section 3: Citation Cards Grid / Stream -->
+                <section id="sec-cards" class="scroll-mt-24 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>✨</span> 引用审计与证据对齐卡片
+                        </h2>
+                        <span class="text-xs text-slate-500 dark:text-slate-400 font-mono">共 {report.total_citations} 项</span>
+                    </div>
+
+                    <div id="cardsContainer">
+                        {full_cards}
+                    </div>
+                </section>
+
+                <!-- Section 4: Details Table Section -->
+                <section id="sec-table" class="scroll-mt-24 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span>📋</span> 全量文献核查明细表格
+                        </h2>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-200 dark:border-slate-800">
+                                    <tr>
+                                        <th class="p-3">ID</th>
+                                        <th class="p-3">文献标题 / 引用摘要</th>
+                                        <th class="p-3">状态分类</th>
+                                        <th class="p-3">风险等级</th>
+                                        <th class="p-3">核查说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tableBody" class="divide-y divide-slate-100 dark:divide-slate-800/60">
+                                    {full_rows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Footer -->
+                <footer class="pt-8 pb-12 text-center text-xs text-slate-400 dark:text-slate-500 border-t border-slate-200/60 dark:border-slate-800/60 space-y-1">
+                    <p>Generated by <a href="https://github.com/LyraFelix/Academic_Guardrail_Agent" target="_blank" class="text-sky-500 font-semibold hover:underline">Academic Guardrail Agent</a> · Powered by Multilingual Claim Alignment & Retraction Watch 50K Index</p>
+                    <p class="font-mono text-[11px]">Zero-LLM CPU-First Core Engine · Mathematical Formulations via KaTeX</p>
+                </footer>
+            </div>
         </div>
+    </main>
 
-        <footer class="footer">
-            <p>Generated by <a href="https://github.com/LyraFelix/Academic_Guardrail_Agent" target="_blank">Academic Guardrail Agent</a> · Powered by Multilingual Claim Alignment & Retraction Watch 50K Index</p>
-        </footer>
-    </div>
-
+    <!-- Client-Side Filter & Theme Scripts -->
     <script>
+        // KaTeX Auto-Render Initializer
+        document.addEventListener("DOMContentLoaded", function() {{
+            if (typeof renderMathInElement === "function") {{
+                renderMathInElement(document.body, {{
+                    delimiters: [
+                        {{left: "$$", right: "$$", display: true}},
+                        {{left: "$", right: "$", display: false}},
+                        {{left: "\\\\(", right: "\\\\)", display: false}},
+                        {{left: "\\\\[", right: "\\\\]", display: true}}
+                    ],
+                    throwOnError: false
+                }});
+            }}
+        }});
+
+        // Dark/Light Theme Switcher
+        function initTheme() {{
+            const saved = localStorage.getItem('ag_theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {{
+                document.documentElement.classList.add('dark');
+            }} else {{
+                document.documentElement.classList.remove('dark');
+            }}
+        }}
+        initTheme();
+
+        function toggleTheme() {{
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('ag_theme', isDark ? 'dark' : 'light');
+        }}
+
+        // Filter & Search Logic
         let currentFilter = 'all';
         let searchQuery = '';
 
@@ -607,25 +514,27 @@ class ReportGenerator:
 
             cards.forEach(card => {{
                 const risk = card.getAttribute('data-risk');
-                const title = card.getAttribute('data-search') || '';
+                const text = card.getAttribute('data-search') || '';
                 const matchRisk = (currentFilter === 'all' || risk === currentFilter);
-                const matchSearch = (!searchQuery || title.includes(searchQuery));
+                const matchSearch = (!searchQuery || text.includes(searchQuery));
                 card.style.display = (matchRisk && matchSearch) ? 'block' : 'none';
             }});
 
             rows.forEach(row => {{
                 const risk = row.getAttribute('data-risk');
-                const title = row.getAttribute('data-search') || '';
+                const text = row.getAttribute('data-search') || '';
                 const matchRisk = (currentFilter === 'all' || risk === currentFilter);
-                const matchSearch = (!searchQuery || title.includes(searchQuery));
+                const matchSearch = (!searchQuery || text.includes(searchQuery));
                 row.style.display = (matchRisk && matchSearch) ? 'table-row' : 'none';
             }});
         }}
 
         function filterRisk(risk, btn) {{
             currentFilter = risk;
-            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+            document.querySelectorAll('#filterPills button').forEach(b => {{
+                b.className = "filter-pill px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all";
+            }});
+            btn.className = "filter-pill active px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 text-white dark:bg-white dark:text-slate-950 transition-all";
             applyFilters();
         }}
 
