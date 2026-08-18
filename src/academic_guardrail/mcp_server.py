@@ -120,20 +120,46 @@ async def check_paper_retraction(doi: str) -> str:
 
 @mcp.tool()
 @handle_mcp_exceptions
-async def audit_document_claims(file_path: str, refs_dir: str = "", detail: str = "compact") -> str:
+async def audit_document_claims(
+    file_path: str,
+    refs_dir: str = "",
+    detail: str = "compact",
+    output_html_path: str = ""
+) -> str:
     """全面审计论文原稿（.pdf, .docx, .md, .tex），抽取引用真实性、撤稿记录，
-    并提取正文断言与被引文献的精准证据片段。支持 Progressive Disclosure 载荷控制 (detail: 'compact' | 'detailed' | 'debug')。
+    并提取正文断言与被引文献的精准证据片段。
+    自动生成自包含 HTML 审查报告并保存在本地。
+    支持 Progressive Disclosure 载荷控制 (detail: 'compact' | 'detailed' | 'debug')。
     """
+    import os
+    from academic_guardrail.core.reporter import ReportGenerator
+
     service = _get_service()
     report = await service.audit_document(file_path, refs_dir=refs_dir if refs_dir else None)
 
     if report.total_citations == 0:
         return "ℹ️ 未在文档中识别出任何文献引用标记或 GB/T 7714 格式。"
 
+    # Auto-generate HTML report file
+    if not output_html_path:
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        dir_name = os.path.dirname(os.path.abspath(file_path)) or os.getcwd()
+        output_html_path = os.path.join(dir_name, f"{base_name}_audit_report.html")
+
+    try:
+        generator = ReportGenerator()
+        html_content = generator.generate_html(report)
+        with open(output_html_path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        saved_msg = f"📁 自包含 HTML 审查报告已自动保存至: {os.path.abspath(output_html_path)}"
+    except Exception as e:
+        saved_msg = f"⚠️ HTML 报告保存失败: {e}"
+
     detail_mode = (detail or "compact").lower()
 
     output_lines = [
         f"📊 学术引用与原文对齐审计报告: {report.document_path} (Payload Detail: {detail_mode.upper()})",
+        saved_msg,
         f"总引用数: {report.total_citations} | 🟢 吻合通过: {report.passed_count} | 🔵 补充提示: {report.notice_count} | 🟡 未查核警告: {report.warning_count} | 🔴 撤稿高危: {report.danger_count}\n",
         "--- 提炼对齐明细 (请宿主 Agent 评阅正文断言与文献原文对齐情况) ---"
     ]
@@ -176,6 +202,29 @@ async def audit_document_claims(file_path: str, refs_dir: str = "", detail: str 
         output_lines.extend(line_info)
 
     return "\n".join(output_lines)
+
+
+@mcp.tool()
+@handle_mcp_exceptions
+async def generate_audit_html_report(file_path: str, output_path: str = "", refs_dir: str = "") -> str:
+    """运行学术审计并直接输出自包含 HTML 报告（含 KaTeX、Sticky TOC、暗黑模式切换）。"""
+    import os
+    from academic_guardrail.core.reporter import ReportGenerator
+
+    service = _get_service()
+    report = await service.audit_document(file_path, refs_dir=refs_dir if refs_dir else None)
+
+    if not output_path:
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        dir_name = os.path.dirname(os.path.abspath(file_path)) or os.getcwd()
+        output_path = os.path.join(dir_name, f"{base_name}_audit_report.html")
+
+    generator = ReportGenerator()
+    html_content = generator.generate_html(report)
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+
+    return f"✅ HTML 审查报告生成成功！\n文件绝对路径: {os.path.abspath(output_path)}\n包含引用总数: {report.total_citations} 项。"
 
 
 def main():
