@@ -21,16 +21,13 @@
 ## 🖼️ Demo Preview
 
 ### 1. Browser UI Report Preview
-Auto-launches your system browser to render a modern glassmorphism HTML report with 5-metric summary cards, badges, and sentence-level context alignment:
+Auto-launches your system browser to render a self-contained modern HTML report with Sticky TOC navigation, Slate/Zinc dark mode, 5-metric dashboard cards, KaTeX formulas, and sentence-level evidence alignment:
 
-#### View 1: Header & 5-Metric Dashboard Summary View
-![HTML Report Header & Dashboard View](docs/assets/report_header_preview.png)
+#### View 1: Executive Summary & 5-Metric Dashboard View
+![HTML Report Header & Dashboard View](docs/assets/report_dashboard_preview.png)
 
-#### View 2: Citation Audit & Claim Consistency Cards View
+#### View 2: Citation Evidence Alignment & Detailed Cards View
 ![HTML Report Cards View](docs/assets/report_cards_preview.png)
-
-#### View 3: Full Citation Audit Table View
-![HTML Report Table View](docs/assets/report_table_preview.png)
 
 ### 2. Interactive CLI Audit (`--open` / `-b`)
 Run the audit command in your terminal to inspect claims and citations across public APIs and local reference files:

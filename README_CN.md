@@ -21,16 +21,13 @@
 ## 🖼️ 运行效果预览 (Demo Preview)
 
 ### 1. HTML 审查报告效果 (Browser UI Preview)
-调起系统默认浏览器，展示具备卡片式布局、5 维统计仪表盘与上下文句级高亮对齐的现代学术审计报告：
+调起系统默认浏览器，展示具备自包含排版、Sticky 目录导航、Slate/Zinc 暗黑模式自适应、5 维统计仪表盘与 KaTeX 公式渲染的现代化学术审计报告：
 
-#### 视图一：整体论文审计概览与统计仪表盘 (Header & Dashboard View)
-![HTML 审计报告整体概览视图](docs/assets/report_header_preview.png)
+#### 视图一：整体论文审计概览与统计仪表盘 (Executive Summary & Dashboard View)
+![HTML 审计报告整体概览视图](docs/assets/report_dashboard_preview.png)
 
-#### 视图二：引用审计与内容一致性卡片明细 (Card Details View)
+#### 视图二：引用证据对齐与卡片明细 (Citation Evidence Alignment & Cards View)
 ![HTML 审计报告卡片明细视图](docs/assets/report_cards_preview.png)
-
-#### 视图三：全量文献核查汇总表格 (Summary Table View)
-![HTML 审计报告汇总表格视图](docs/assets/report_table_preview.png)
 
 ### 2. 终端 CLI 交互式审计 (`--open` / `-b`)
 在终端执行审计命令后，系统自动分析原稿引用与断言，并在控制台实时输出分级风险明细：
