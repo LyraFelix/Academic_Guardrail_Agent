@@ -1,8 +1,7 @@
-"""General-Purpose Claim Evaluator with Universal Sentence-Level Alignment and Syntactic Negation Analysis.
+"""Heuristic claim alignment using lexical overlap and optional embeddings.
 
-Designed for robust, zero-overfitting domain-agnostic academic verification.
-Uses generic linguistic stemming, academic synonym mapping, sentence-level rationale selection,
-and universal syntactic negation & directional antonym analysis.
+Scores and negation flags are review hints, not factual entailment judgments.
+Rules and thresholds require separate evaluation before accuracy claims.
 """
 
 import re
@@ -204,8 +203,8 @@ class ClaimEvaluator:
     Stage 2: Semantic & Lexical Fusion with Universal Syntactic Negation Conflict Detection.
     """
 
-    def __init__(self):
-        self.semantic_matcher = SemanticMatcher()
+    def __init__(self, use_embeddings: bool = True):
+        self.semantic_matcher = SemanticMatcher(use_embeddings=use_embeddings)
 
     def split_sentences(self, text: str) -> List[str]:
         """Splits multi-sentence abstract or full-text into sentence units (supports Chinese & English)."""

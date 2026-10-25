@@ -13,6 +13,56 @@ STOP_WORDS = {
     "then", "once", "and", "or", "study", "research", "analysis", "approach", "paper"
 }
 
+def add_retraction_evidence(candidate: Dict[str, Any], source: Optional[str] = None) -> Dict[str, Any]:
+    """Copy metadata and make the strength of each retraction check explicit."""
+    result = dict(candidate)
+    source = source or result.get("source") or "API Database"
+    identifier = ReferenceResolver.normalize_doi(result.get("doi"))
+    sources = [dict(item) for item in result.get("sources", [])]
+    if not sources and ("matched" not in result or result.get("matched")):
+        flag = result.get("is_retracted")
+        sources.append({
+            "source": source, "kind": "official_metadata", "identifier": identifier,
+            "detail": "Article metadata match and retraction flag",
+            "is_retracted": flag if isinstance(flag, bool) else None,
+        })
+    title = (result.get("title") or "").lower()
+    suspected = result.get("retraction_suspected", False) or any(
+        keyword in title for keyword in ("retract", "withdrawn", "撤稿"))
+    if suspected and not any(s.get("kind") == "title_heuristic" for s in sources):
+        sources.append({
+            "source": source, "kind": "title_heuristic", "identifier": identifier,
+            "detail": "Title contains a retraction keyword; manual review required",
+            "is_retracted": None,
+        })
+    # Evidence for a different DOI must never be transferred to this candidate.
+    sources = [s for s in sources if not (
+        identifier and ReferenceResolver.normalize_doi(s.get("identifier"))
+        and ReferenceResolver.normalize_doi(s["identifier"]) != identifier)]
+    confirmed = any(s.get("is_retracted") is True and
+                    s.get("kind") in ("official_metadata", "offline_database")
+                    for s in sources)
+    checked = any(s.get("is_retracted") is not None for s in sources)
+    result.update(
+        sources=sources, is_retracted=confirmed, retraction_suspected=bool(suspected),
+        retraction_status=("CONFIRMED" if confirmed else "SUSPECTED" if suspected
+                           else "NO_RECORD" if checked else "NOT_CHECKED"))
+    return result
+
+
+def merge_candidate_evidence(first: Dict[str, Any], second: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge records only after the caller establishes the same paper identity."""
+    merged = add_retraction_evidence(first)
+    other = add_retraction_evidence(second)
+    for key, value in other.items():
+        if key not in merged or merged[key] in (None, "", []):
+            merged[key] = value
+    for source in other["sources"]:
+        if source not in merged["sources"]:
+            merged["sources"].append(source)
+    merged["retraction_suspected"] |= other["retraction_suspected"]
+    return add_retraction_evidence(merged)
+
 
 class ReferenceResolver:
     """Evaluates and re-ranks retrieved paper candidates against target citation."""
@@ -138,21 +188,24 @@ class ReferenceResolver:
         """Deduplicates candidates across multi-provider sources prioritizing DOI,
         falling back to (normalized_title, first_author, year) matching.
         """
-        seen_dois = set()
-        seen_keys = set()
+        seen_dois = {}
+        seen_keys = {}
         deduped = []
 
         for cand in candidates:
             if not isinstance(cand, dict):
                 continue
 
+            cand = add_retraction_evidence(cand)
             raw_doi = cand.get("doi")
             norm_doi = cls.normalize_doi(raw_doi)
 
             if norm_doi:
                 if norm_doi in seen_dois:
+                    index = seen_dois[norm_doi]
+                    deduped[index] = merge_candidate_evidence(deduped[index], cand)
                     continue
-                seen_dois.add(norm_doi)
+                seen_dois[norm_doi] = len(deduped)
                 cand["doi"] = norm_doi
                 deduped.append(cand)
                 continue
@@ -174,21 +227,23 @@ class ReferenceResolver:
             if norm_title and len(norm_title) >= 5:
                 combo_key = (norm_title, first_author, str(year))
                 if combo_key in seen_keys:
+                    index = seen_keys[combo_key]
+                    deduped[index] = merge_candidate_evidence(deduped[index], cand)
                     continue
-                seen_keys.add(combo_key)
+                seen_keys[combo_key] = len(deduped)
 
             deduped.append(cand)
 
         return deduped
 
-    def select_best_candidate(self, cit: Citation, candidates: List[Dict[str, Any]], min_score: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    def select_best_candidate(self, cit: Citation, candidates: List[Dict[str, Any]], min_score: Optional[float] = None, deduplicate: bool = True) -> Optional[Dict[str, Any]]:
         if min_score is None:
             min_score = GuardrailConfig.REFERENCE_MIN_SCORE
 
         if not candidates:
             return None
 
-        clean_cands = self.deduplicate_candidates(candidates)
+        clean_cands = self.deduplicate_candidates(candidates) if deduplicate else [dict(c) for c in candidates]
 
         scored = []
         for cand in clean_cands:

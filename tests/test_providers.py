@@ -14,7 +14,8 @@ def test_chinese_academic_provider_doi():
         "abstract": "Deeper neural networks are more difficult to train.",
         "is_retracted": False
     }
-    with patch.object(provider.openalex, "get_by_doi", AsyncMock(return_value=mock_res)):
+    with patch.object(provider.openalex, "get_by_doi", AsyncMock(return_value=mock_res)), \
+         patch.object(provider.crossref, "get_by_doi", AsyncMock(return_value=None)):
         res = asyncio.run(provider.verify_citation(title="Deep Residual Learning for Image Recognition", doi="10.1109/CVPR.2016.90"))
     
     assert res["matched"] is True
@@ -26,7 +27,8 @@ def test_chinese_core_journal_heuristic_unverified():
     provider = ChineseAcademicProvider()
     fake_citation = "王某某. 一个完全虚构的论文. 管理世界, 2023."
     with patch.object(provider.openalex, "search_by_title", AsyncMock(return_value=[])), \
-         patch.object(provider.crossref, "search_by_title", AsyncMock(return_value=[])):
+         patch.object(provider.crossref, "search_by_title", AsyncMock(return_value=[])), \
+         patch.object(provider, "_search_semantic_scholar_candidates", AsyncMock(return_value=[])):
         res = asyncio.run(provider.verify_citation(title="一个完全虚构的论文", raw_text=fake_citation))
 
     assert res["matched"] is None

@@ -20,6 +20,7 @@ import sqlite3
 import logging
 from typing import Optional, Dict, Any, List
 from academic_guardrail.core.ref_resolver import ReferenceResolver
+from academic_guardrail.core.exceptions import ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +62,14 @@ KNOWN_RETRACTION_SEEDS: List[Dict[str, Any]] = [
 
 
 class OfflineRetractionDB:
-    """Zero-latency offline Retraction Watch lookup engine."""
+    """Local SQLite lookup with a small bundled historical demo index."""
 
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or os.environ.get("RETRACTION_DB_PATH", ":memory:")
         self._retracted_set = set()
         self._records_map = {}
         self._conn = None
+        self._initialization_error = None
         self._init_db()
 
     def _init_db(self):
@@ -90,38 +92,35 @@ class OfflineRetractionDB:
         except Exception as e:
             logger.warning(
                 "[academic_guardrail] Failed to initialize SQLite RetractionDB (%s), "
-                "falling back to in-memory set.", e
+                "lookups will report unavailability.", e
             )
+            self._initialization_error = e
+            self.close()
 
     def seed_known_retractions(self, records: List[Dict[str, Any]]):
-        """Seeds known retraction records into memory set and SQLite table."""
+        """Add missing demo records without overwriting a user's curated database."""
         cursor = self._conn.cursor() if self._conn else None
-        for r in records:
-            raw_doi = r.get("doi", "")
-            if not raw_doi:
+        for record in records:
+            doi = ReferenceResolver.normalize_doi(record.get("doi"))
+            if not doi:
                 continue
-            norm_doi = ReferenceResolver.normalize_doi(raw_doi)
-            if not norm_doi:
-                continue
-            self._retracted_set.add(norm_doi)
-            self._records_map[norm_doi] = r
-
+            stored = dict(record)
             if cursor:
-                try:
-                    cursor.execute(
-                        "INSERT OR REPLACE INTO retractions (doi, title, journal, retraction_date, reason) VALUES (?, ?, ?, ?, ?)",
-                        (norm_doi, r.get("title", ""), r.get("journal", ""), r.get("date", ""), r.get("reason", ""))
-                    )
-                except Exception:
-                    pass
+                cursor.execute(
+                    "INSERT OR IGNORE INTO retractions (doi, title, journal, retraction_date, reason) VALUES (?, ?, ?, ?, ?)",
+                    (doi, record.get("title", ""), record.get("journal", ""), record.get("date", ""), record.get("reason", "")))
+                row = cursor.execute(
+                    "SELECT doi, title, journal, retraction_date, reason FROM retractions WHERE doi = ?", (doi,)).fetchone()
+                stored = dict(zip(("doi", "title", "journal", "date", "reason"), row))
+            self._retracted_set.add(doi)
+            self._records_map[doi] = stored
         if self._conn:
-            try:
-                self._conn.commit()
-            except Exception:
-                pass
+            self._conn.commit()
 
     def check_doi(self, doi_str: str) -> Optional[Dict[str, Any]]:
-        """Checks if a DOI is registered in the offline Retraction Watch index (<0.1ms)."""
+        """Return a matching record; raise on storage errors rather than imply absence."""
+        if self._initialization_error is not None:
+            raise ProviderError("OFFLINE_DB_UNAVAILABLE") from self._initialization_error
         if not doi_str:
             return None
 
@@ -131,7 +130,7 @@ class OfflineRetractionDB:
 
         if norm_doi in self._retracted_set:
             info = self._records_map.get(norm_doi, {})
-            return {
+            return self._with_evidence({
                 "matched": True,
                 "is_retracted": True,
                 "doi": norm_doi,
@@ -139,7 +138,7 @@ class OfflineRetractionDB:
                 "journal": info.get("journal", "Academic Journal"),
                 "reason": info.get("reason", "Retraction Notice Issued"),
                 "source": "Offline Retraction Watch Index"
-            }
+            })
 
         # Query SQLite if not found in memory cache
         if self._conn:
@@ -160,11 +159,24 @@ class OfflineRetractionDB:
                         "source": "Offline Retraction Watch SQLite"
                     }
                     self._records_map[norm_doi] = res
-                    return res
-            except Exception:
-                pass
+                    return self._with_evidence(res)
+            except sqlite3.Error as exc:
+                raise ProviderError("OFFLINE_DB_UNAVAILABLE") from exc
 
         return None
+
+    @staticmethod
+    def _with_evidence(record):
+        """Keep the database record and its evidence strength together."""
+        result = dict(record)
+        result["retraction_status"] = "CONFIRMED"
+        result["retraction_info"] = record.get("reason")
+        result["sources"] = [{
+            "source": record["source"], "kind": "offline_database",
+            "identifier": record["doi"], "detail": record.get("reason"),
+            "is_retracted": True,
+        }]
+        return result
 
     def close(self):
         if self._conn:

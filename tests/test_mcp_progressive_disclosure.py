@@ -19,19 +19,22 @@ async def test_verify_single_citation_compact():
         "abstract": "This is a full abstract for testing purposes."
     }
 
-    with patch("academic_guardrail.mcp_server._get_provider") as mock_get:
-        provider = AsyncMock()
-        provider.verify_citation = AsyncMock(return_value=mock_res)
-        mock_get.return_value = provider
+    with patch("academic_guardrail.mcp_server._get_service") as mock_get:
+        from academic_guardrail.core.reference_decision import decide_reference
+        from academic_guardrail.core.models import Citation
+        mock_res["sources"] = [{"source": "fixture", "kind": "official_metadata"}]
+        service = AsyncMock()
+        service.verify_reference.return_value = decide_reference(Citation(id="t", raw_text="Test Paper Title"), mock_res)
+        mock_get.return_value = service
 
         # 1. Compact mode (Default)
         res_compact = await verify_single_citation("Test Paper Title", detail="compact")
-        assert "🟢 [PASS/验证通过]" in res_compact
+        assert "[PASS/VALID]" in res_compact
         assert "消歧打分分解" not in res_compact
 
         # 2. Detailed mode
         res_detailed = await verify_single_citation("Test Paper Title", detail="detailed")
-        assert "🟢 [PASS/验证通过]" in res_detailed
+        assert "[PASS/VALID]" in res_detailed
         assert "消歧打分分解" in res_detailed
         assert "Reference Confidence: 0.95" in res_detailed
 

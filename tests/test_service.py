@@ -2,6 +2,7 @@
 
 import pytest
 import asyncio
+from unittest.mock import AsyncMock
 from academic_guardrail.core.service import AuditService
 from academic_guardrail.core.models import RiskLevel
 
@@ -28,6 +29,9 @@ class TestAuditService:
         file_p = tmp_path / "test_doc.txt"
         file_p.write_text(content, encoding="utf-8")
 
+        service.provider.verify_citation = AsyncMock(return_value={
+            "matched": None, "evidence_status": "JOURNAL_MATCHED_ARTICLE_UNVERIFIED", "confidence": 0.4,
+        })
         report = asyncio.run(service.audit_document(str(file_p)))
         assert report.total_citations == 1
         assert len(report.results) == 1

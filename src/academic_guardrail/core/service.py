@@ -1,261 +1,169 @@
-"""Audit Service Layer orchestrating document parsing, citation lookup, claim evaluation, and report generation."""
+"""Coordinate collection, reference decisions and optional heuristic alignment."""
 
 import asyncio
-import logging
-from typing import Optional, List, Tuple
-from academic_guardrail.core.parser import DocumentParser
-from academic_guardrail.core.ref_store import LocalRefStore
+from typing import Optional
+
+from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 from academic_guardrail.core.models import (
-    Citation, ContextClaim, VerificationResult, VerificationStatus, RiskLevel, DocumentAuditReport
+    Citation, ContextClaim, DocumentAuditReport, RiskLevel,
+    VerificationResult, VerificationStatus,
 )
-from academic_guardrail.core.exceptions import (
-    AcademicGuardrailError, ParserError, ProviderError, RateLimitError, VerificationError
-)
+from academic_guardrail.core.parser import DocumentParser
+from academic_guardrail.core.ref_resolver import ReferenceResolver
+from academic_guardrail.core.ref_store import LocalRefStore
+from academic_guardrail.core.reference_decision import decide_reference
 from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
-from academic_guardrail.core.config import GuardrailConfig
-
-logger = logging.getLogger(__name__)
+from academic_guardrail.providers.retraction_db import OfflineRetractionDB
 
 
 class AuditService:
-    """Core Service Layer for Academic Guardrail Agent."""
+    """One decision path for every public entry point.
 
-    def __init__(self, max_concurrency: int = 5, request_timeout: float = 35.0):
+    Offline mode never constructs an HTTP provider or initializes an embedding
+    model. A local match establishes only the identity of the supplied file.
+    """
+
+    def __init__(self, max_concurrency: int = 5, request_timeout: float = 35.0,
+                 offline: bool = False, email: Optional[str] = None):
+        if max_concurrency < 1 or request_timeout <= 0:
+            raise ValueError("Concurrency and timeout must be positive")
         self.max_concurrency = max_concurrency
         self.request_timeout = request_timeout
+        self.offline = offline
         self.parser = DocumentParser()
-        self.provider = ChineseAcademicProvider(max_concurrency=max_concurrency)
-        self.evaluator = ClaimEvaluator()
+        self.provider = None if offline else ChineseAcademicProvider(
+            max_concurrency=max_concurrency, email=email)
+        self.retraction_db = OfflineRetractionDB() if offline else None
+        self.evaluator = ClaimEvaluator(use_embeddings=not offline)
 
     async def close(self):
-        """Closes provider HTTP client session pools and offline database connections."""
-        if hasattr(self.provider, "client") and self.provider.client:
-            await self.provider.client.close()
-        if hasattr(self.provider, "retraction_db"):
-            self.provider.retraction_db.close()
+        if self.provider is not None:
+            await self.provider.close()
+        if self.retraction_db is not None:
+            self.retraction_db.close()
 
-    async def verify_single_item(
-        self,
-        cit: Citation,
-        claim: ContextClaim,
-        ref_store: Optional[LocalRefStore] = None
-    ) -> VerificationResult:
-        """Verifies a single citation against online databases or local ref store."""
+    def _offline_evidence(self, citation: Citation) -> dict:
+        doi = ReferenceResolver.normalize_doi(citation.doi)
         try:
-            verify_res = await asyncio.wait_for(
-                self.provider.verify_citation(title=cit.title or cit.raw_text, doi=cit.doi, raw_text=cit.raw_text),
-                timeout=self.request_timeout
+            record = self.retraction_db.check_doi(doi) if doi else None
+        except ProviderError:
+            return {
+                "matched": False, "retraction_status": "NOT_CHECKED",
+                "failure_reason": "OFFLINE_DB_UNAVAILABLE", "evidence_status": "PROVIDER_UNAVAILABLE",
+                "sources": [{"source": "Local retraction database", "kind": "offline_database",
+                             "identifier": doi, "detail": "本地数据库读取失败，未完成检查", "is_retracted": None}],
+            }
+        sources = []
+        if doi:
+            sources.append({
+                "source": "Local retraction database", "kind": "offline_database",
+                "identifier": doi, "is_retracted": bool(record),
+                "detail": f"数据库: {self.retraction_db.db_path}；内置数据只有 3 条历史撤稿示例，不代表完整覆盖。",
+            })
+        return {
+            **(record or {}), "matched": bool(record), "sources": sources,
+            "confidence": 1.0 if record else 0.0,
+            "retraction_status": "CONFIRMED" if record else ("NO_RECORD" if doi else "NOT_CHECKED"),
+            "retraction_info": record.get("reason") if record else None,
+            "evidence_status": "RETRACTED" if record else "OFFLINE_NO_MATCH",
+        }
+
+    async def _collect_evidence(self, citation: Citation) -> dict:
+        if self.offline:
+            return self._offline_evidence(citation)
+        try:
+            return await asyncio.wait_for(
+                self.provider.verify_citation(
+                    title=citation.title or citation.raw_text, doi=citation.doi,
+                    raw_text=citation.raw_text, authors=citation.authors, year=citation.year),
+                timeout=self.request_timeout,
             )
         except asyncio.TimeoutError:
-            return VerificationResult(
-                citation=cit,
-                claim=claim,
-                status=VerificationStatus.UNVERIFIED,
-                risk_level=RiskLevel.WARNING,
-                reference_confidence=0.0,
-                message="🟡 请求超时：数据库查证已超过限制"
-            )
-        except RateLimitError as e:
-            return VerificationResult(
-                citation=cit,
-                claim=claim,
-                status=VerificationStatus.UNVERIFIED,
-                risk_level=RiskLevel.WARNING,
-                reference_confidence=0.0,
-                message=f"🟡 触发 API 速率限制: {e}"
-            )
-        except ProviderError as e:
-            return VerificationResult(
-                citation=cit,
-                claim=claim,
-                status=VerificationStatus.UNVERIFIED,
-                risk_level=RiskLevel.WARNING,
-                reference_confidence=0.0,
-                message=f"🟡 线上数据库检索失败: {e}"
-            )
+            reason = "TIMEOUT"
+        except RateLimitError:
+            reason = "RATE_LIMITED"
+        except ProviderError:
+            reason = "PROVIDER_ERROR"
+        # Keep failures as observations so a local fallback can still run.
+        return {"matched": False, "evidence_status": "PROVIDER_UNAVAILABLE",
+                "failure_reason": reason, "retraction_status": "NOT_CHECKED"}
 
-        if verify_res.get("is_retracted"):
-            status = VerificationStatus.RETRACTED
-            risk = RiskLevel.DANGER
-            ref_confidence = verify_res.get("confidence", 1.0)
-            alignment_state = None
-            msg = f"🔴 撤稿高危：文献《{verify_res.get('title', '')}》存在撤稿或预警记录 (Retracted Paper)，存在严重学术诚信风险！"
-            return VerificationResult(
-                citation=cit,
-                claim=claim,
-                status=status,
-                risk_level=risk,
-                verified_title=verify_res.get("title"),
-                verified_doi=verify_res.get("doi"),
-                abstract_tldr=verify_res.get("abstract"),
-                reference_confidence=ref_confidence,
-                alignment_state=alignment_state,
-                message=msg
-            )
-        else:
-            abstract = verify_res.get("abstract", "")
-            source_name = verify_res.get("source", "权威数据库")
-            is_matched = verify_res.get("matched", False)
-            is_uncertain = verify_res.get("is_uncertain", False) or verify_res.get("match_confidence") == "UNCERTAIN"
-            ref_confidence = verify_res.get("confidence", 0.0) if is_matched else 0.0
+    async def verify_reference(self, citation: Citation,
+                               ref_store: Optional[LocalRefStore] = None) -> VerificationResult:
+        """Collect reference evidence and apply the shared precedence rules."""
+        evidence = await self._collect_evidence(citation)
+        preliminary = decide_reference(citation, evidence)
+        # Do not use unrelated local text to resolve online ambiguity or erase a
+        # retraction warning. These cases need explicit identity confirmation.
+        can_use_local = preliminary.evidence_status not in {
+            "AMBIGUOUS", "RETRACTED", "RETRACTION_SUSPECTED",
+        }
+        if ref_store and can_use_local and (not evidence.get("matched") or not evidence.get("abstract")):
+            local = ref_store.find_match(citation)
+            if local:
+                evidence = {
+                    **evidence, "matched": True, "title": local["title"],
+                    "doi": evidence.get("doi") if evidence.get("matched") else None,
+                    "abstract": local.get("abstract") or local.get("fulltext") or "",
+                    "confidence": local["match_score"], "evidence_status": "LOCAL_MATCHED",
+                    "resolution_metadata": local.get("resolution_metadata"),
+                    "sources": [*(evidence.get("sources") or []), {
+                        "source": local["filename"], "kind": "local_file",
+                        "identifier": local["filepath"], "detail": "从用户提供的文件提取标题和文本",
+                    }],
+                }
+        return decide_reference(citation, evidence)
 
-            if is_uncertain:
-                is_matched = False
+    async def verify_single_item(self, cit: Citation, claim: ContextClaim,
+                                 ref_store: Optional[LocalRefStore] = None) -> VerificationResult:
+        result = await self.verify_reference(cit, ref_store)
+        result.claim = claim
+        if result.status != VerificationStatus.VALID or not result.evidence_text or not claim.claim_sentence.strip():
+            return result
 
-            # Fallback to local reference file if unverified or online abstract is missing
-            local_abstract = None
-            if (not is_matched or not abstract) and ref_store:
-                match_res = ref_store.find_abstract_for_citation(cit.title or "", cit.raw_text)
-                if match_res:
-                    local_abstract, ref_filename, local_conf = match_res
-                    source_name = f"本地参考文献 ({ref_filename})"
-                    is_matched = True
-                    ref_confidence = local_conf
+        score, reason, sentence, state, engine = self.evaluator.evaluate_alignment(
+            claim.claim_sentence, result.evidence_text)
+        result.verification_scope = "HEURISTIC_ALIGNMENT"
+        result.claim_alignment_score = score
+        result.alignment_state = state
+        result.alignment_engine = engine
+        result.semantic_mode = ("FULL" if engine == "vector_embedding" else
+                                "CORE_FALLBACK" if self.evaluator.semantic_matcher._model_load_failed else "CORE")
+        result.evidence_text = sentence or result.evidence_text
+        result.evidence_granularity = "SENTENCE" if sentence else "FULL_ABSTRACT"
+        descriptions = {
+            "SUPPORTED": "文本具有较高相似度，仍需人工确认其是否支持断言。",
+            "PARTIAL": "文本部分相似，请检查是否缺少条件或限定范围。",
+            "NEUTRAL": "未找到直接对应的文本，请人工检查全文。",
+            "CONTRADICTED": "检测到可能的否定或方向冲突，请人工检查语境。",
+        }
+        if state == "CONTRADICTED":
+            result.status, result.risk_level = VerificationStatus.CLAIM_MISMATCH, RiskLevel.WARNING
+        elif state in {"NEUTRAL", "PARTIAL"}:
+            result.status, result.risk_level = VerificationStatus.CLAIM_MISMATCH, RiskLevel.NOTICE
+        elif state != "SUPPORTED":
+            result.status, result.risk_level = VerificationStatus.UNVERIFIED, RiskLevel.WARNING
+        result.message += " 启发式文本比对：" + descriptions.get(state, "对齐状态未知，请人工确认。")
+        result.message += f" 匹配分数 {score:.2f}。{reason} 此结果不构成事实蕴含或学术诚信结论。"
+        return result
 
-            target_abstract = abstract or local_abstract
-            score = None
-
-            best_sent = ""
-            alignment_state = None
-            alignment_engine = None
-            amb_list = verify_res.get("ambiguous_candidates")
-            margin_val = verify_res.get("match_margin", 0.0)
-
-            evidence_status = verify_res.get("evidence_status")
-
-            if is_uncertain:
-                status = VerificationStatus.UNVERIFIED
-                risk = RiskLevel.WARNING
-                ref_confidence = verify_res.get("confidence", 0.0)
-                alignment_state = "UNCERTAIN"
-                compare_lines = []
-                if amb_list:
-                    for idx, c in enumerate(amb_list, 1):
-                        doi_info = f" (DOI: {c['doi']})" if c.get('doi') else ""
-                        compare_lines.append(f"  [{idx}] 《{c.get('title', '')}》{doi_info} [匹配得分: {c.get('score', 0.0):.2f}, 来源: {c.get('source', '')}]")
-                details_str = "\n".join(compare_lines) if compare_lines else "  暂无双候选数据"
-                msg = (
-                    f"🟡 存在匹配歧义：检索到多篇极其相似的相关候选文献（首选得分 {ref_confidence:.2f}，差值 {margin_val:.2f} < 5%）：\n"
-                    f"{details_str}\n"
-                    f"系统无法确定唯一精准目标，请在手稿中显式标识 DOI 或补全文献标题以消除歧义。"
-                )
-            elif evidence_status == "JOURNAL_MATCHED_ARTICLE_UNVERIFIED":
-                status = VerificationStatus.UNVERIFIED
-                risk = RiskLevel.NOTICE
-                ref_confidence = verify_res.get("confidence", 0.40)
-                alignment_state = "UNVERIFIED"
-                msg = verify_res.get("message", "🔵 期刊在录待查：检测到文章引自中文核心期刊，具体文章尚未核实。")
-            elif not is_matched:
-                status = VerificationStatus.UNVERIFIED
-                risk = RiskLevel.WARNING
-                ref_confidence = 0.0
-                alignment_state = "UNVERIFIED"
-                msg = "🟡 数据库未核实该文献，请检查拼写或手工确认。"
-            elif not target_abstract:
-                status = VerificationStatus.VALID
-                risk = RiskLevel.PASS
-                alignment_state = "NEUTRAL"
-                msg = f"🟢 文献存在于{source_name}。因数据库及本地库未收录摘要原文，已完成元数据校验。"
-            else:
-                score, reason, best_sent, alignment_state, alignment_engine = self.evaluator.evaluate_alignment(claim.claim_sentence, target_abstract)
-                context_str = f" [最匹配的原句: \"{best_sent[:120]}...\"]" if best_sent else ""
-
-                if alignment_state == "CONTRADICTED":
-                    status = VerificationStatus.CLAIM_MISMATCH
-                    risk = RiskLevel.DANGER
-                    msg = f"🔴 显式极性矛盾：文献核心结论与正文断言存在语法否定或相反逻辑 ({score:.2f})。{reason}{context_str}"
-                elif alignment_state == "NEUTRAL":
-                    status = VerificationStatus.CLAIM_MISMATCH
-                    risk = RiskLevel.NOTICE
-                    msg = f"🔵 缺乏直接依据：文献摘要未直接提供支持该特定结论的因果证据 ({score:.2f})。{reason}{context_str}"
-                elif alignment_state == "PARTIAL":
-                    status = VerificationStatus.CLAIM_MISMATCH
-                    risk = RiskLevel.NOTICE
-                    msg = f"🟡 部分对齐：正文断言与文献摘要呈现中度相关（仅背景或部分吻合）({score:.2f})。{reason}{context_str}"
-                else:  # SUPPORTED or unexpected state
-                    if alignment_state == "SUPPORTED":
-                        status = VerificationStatus.VALID
-                        risk = RiskLevel.PASS
-                        msg = f"🟢 高度一致：正文断言与文献摘要呈现高相关对齐 ({score:.2f})。{reason}{context_str}"
-                    else:
-                        # Defensive fallback — alignment_state returned unexpected value
-                        logger.warning(
-                            "[academic_guardrail] Unexpected alignment_state '%s'; defaulting to UNVERIFIED.",
-                            alignment_state
-                        )
-                        status = VerificationStatus.UNVERIFIED
-                        risk = RiskLevel.WARNING
-                        msg = "🟡 内部警告：断言对齐状态未知，请手工确认。"
-
-        ev_status = verify_res.get("evidence_status")
-        if not ev_status:
-            ev_status = "PROVIDER_UNAVAILABLE" if verify_res.get("failure_reason") else ("ARTICLE_MATCHED" if is_matched else "NOT_FOUND")
-
-        ev_text = best_sent or target_abstract or verify_res.get("abstract")
-        ev_granularity = "SENTENCE" if best_sent else ("FULL_ABSTRACT" if target_abstract else None)
-
-        return VerificationResult(
-            citation=cit,
-            claim=claim,
-            status=status,
-            risk_level=risk,
-            evidence_status=ev_status,
-            failure_reason=verify_res.get("failure_reason"),
-            verified_title=verify_res.get("title"),
-            verified_doi=verify_res.get("doi"),
-            abstract_tldr=ev_text,
-            evidence_text=ev_text,
-            evidence_granularity=ev_granularity,
-            semantic_mode="CORE",
-            reference_confidence=ref_confidence,
-            claim_alignment_score=score,
-            alignment_state=alignment_state,
-            alignment_engine=alignment_engine,
-            resolution_metadata=verify_res.get("resolution_metadata"),
-            ambiguous_candidates=verify_res.get("ambiguous_candidates") if is_uncertain else None,
-            message=msg
-        )
-
-    async def audit_document(
-        self,
-        file_path: str,
-        refs_dir: Optional[str] = None
-    ) -> DocumentAuditReport:
-        """Parses and audits a complete document file asynchronously with concurrency control."""
+    async def audit_document(self, file_path: str,
+                             refs_dir: Optional[str] = None) -> DocumentAuditReport:
         pairs = self.parser.parse_document(file_path)
         ref_store = LocalRefStore(refs_dir) if refs_dir else None
-
-        if not pairs:
-            return DocumentAuditReport(
-                document_path=file_path,
-                total_citations=0,
-                passed_count=0,
-                notice_count=0,
-                warning_count=0,
-                danger_count=0,
-                results=[]
-            )
-
         semaphore = asyncio.Semaphore(self.max_concurrency)
 
-        async def _bounded_verify(cit, claim):
+        async def bounded_verify(citation, claim):
             async with semaphore:
-                return await self.verify_single_item(cit, claim, ref_store)
+                return await self.verify_single_item(citation, claim, ref_store)
 
-        results = await asyncio.gather(*[_bounded_verify(cit, claim) for cit, claim in pairs])
-
-        passed = sum(1 for r in results if r.risk_level == RiskLevel.PASS)
-        notice = sum(1 for r in results if r.risk_level == RiskLevel.NOTICE)
-        warning = sum(1 for r in results if r.risk_level == RiskLevel.WARNING)
-        danger = sum(1 for r in results if r.risk_level == RiskLevel.DANGER)
-
+        results = await asyncio.gather(*(bounded_verify(cit, claim) for cit, claim in pairs))
         return DocumentAuditReport(
-            document_path=file_path,
-            total_citations=len(pairs),
-            passed_count=passed,
-            notice_count=notice,
-            warning_count=warning,
-            danger_count=danger,
-            results=results
+            document_path=file_path, offline=self.offline, total_citations=len(results),
+            passed_count=sum(r.risk_level == RiskLevel.PASS for r in results),
+            notice_count=sum(r.risk_level == RiskLevel.NOTICE for r in results),
+            warning_count=sum(r.risk_level == RiskLevel.WARNING for r in results),
+            danger_count=sum(r.risk_level == RiskLevel.DANGER for r in results),
+            results=results,
         )

@@ -2,7 +2,6 @@
 
 import os
 import re
-import difflib
 from typing import Optional, Dict, Tuple, List
 from academic_guardrail.core.models import Citation, PaperRecord
 from academic_guardrail.core.ref_resolver import ReferenceResolver
@@ -56,7 +55,8 @@ class LocalRefStore:
             return None
 
         # Extract Title: First non-empty paragraph or header line
-        lines = [line.strip() for line in fulltext.split('\n') if line.strip()]
+        lines = [line.strip() for line in fulltext.split('\n')
+                 if line.strip() and not re.fullmatch(r'--- Page \d+ ---', line.strip())]
         title = lines[0] if lines else filename
         if len(title) > 200:
             title = title[:200]
@@ -93,43 +93,19 @@ class LocalRefStore:
             fulltext=fulltext
         )
 
-    def find_abstract_for_citation(self, title: str, raw_text: str) -> Optional[Tuple[str, str, float]]:
-        """Finds matching local paper full-text/abstract by content title & metadata similarity.
-        Returns (target_text, source_filename, confidence_score) or None.
-        """
-        if not self.records:
+    def find_match(self, citation: Citation) -> Optional[Dict]:
+        """Match record metadata only. A bibliography mention is not identity evidence."""
+        candidates = [record.model_dump() for record in self.records]
+        # Identical extracted metadata does not mean identical file contents.
+        best = self.resolver.select_best_candidate(citation, candidates, deduplicate=False)
+        if not best or best.get("is_uncertain") or best.get("match_confidence") == "UNCERTAIN":
             return None
+        return best
 
-        dummy_cit = Citation(
-            id="cit_local",
-            raw_text=raw_text or title or "",
-            title=title or raw_text
-        )
-
-        candidates = []
-        for rec in self.records:
-            candidates.append({
-                "title": rec.title,
-                "authors": rec.authors,
-                "year": rec.year,
-                "abstract": rec.abstract,
-                "fulltext": rec.fulltext,
-                "filename": rec.filename
-            })
-
-        best_cand = self.resolver.select_best_candidate(dummy_cit, candidates, min_score=0.35)
-        if best_cand:
-            fn = best_cand["filename"]
-            target_text = best_cand.get("abstract") or best_cand.get("fulltext") or ""
-            conf = round(best_cand.get("match_score", 0.90), 2)
-            return target_text.strip(), fn, conf
-
-        # Fallback: Substring search in fulltext
-        c_title = (title or "").strip().lower()
-        if len(c_title) >= 6:
-            for rec in self.records:
-                if c_title in rec.fulltext.lower():
-                    target_text = rec.abstract or rec.fulltext
-                    return target_text.strip(), rec.filename, 0.70
-
-        return None
+    def find_abstract_for_citation(self, title: str, raw_text: str) -> Optional[Tuple[str, str, float]]:
+        """Compatibility wrapper; new callers should pass full metadata to find_match."""
+        match = self.find_match(Citation(id="local", title=title or raw_text, raw_text=raw_text))
+        if not match:
+            return None
+        text = match.get("abstract") or match.get("fulltext") or ""
+        return text.strip(), match["filename"], match["match_score"]

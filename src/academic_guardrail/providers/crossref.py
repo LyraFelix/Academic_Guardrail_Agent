@@ -4,6 +4,8 @@ import urllib.parse
 from typing import Optional, Dict, Any, List
 from academic_guardrail.providers.http_client import AcademicHttpClient
 from academic_guardrail.core.cache import get_cache, SqliteCache
+from academic_guardrail.core.ref_resolver import ReferenceResolver, add_retraction_evidence
+from academic_guardrail.core.exceptions import ProviderError
 
 
 class CrossrefProvider:
@@ -21,77 +23,56 @@ class CrossrefProvider:
         self.client = client or AcademicHttpClient(email=self.email)
         self.cache = cache or get_cache()
 
-    async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
-        clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
+    @staticmethod
+    def _process_work(data: Dict[str, Any]) -> Dict[str, Any]:
+        """A notice about another paper is not proof this record was retracted."""
+        titles = data.get("title", [])
+        issued = data.get("issued", {}).get("date-parts", [])
+        doi = ReferenceResolver.normalize_doi(data.get("DOI"))
+        # Only an explicit relation about this work confirms its retraction.
+        relation = data.get("relation", {}).get("is-retracted-by", [])
+        confirmed = bool(relation)
+        return add_retraction_evidence({
+            "title": titles[0] if titles else "",
+            "doi": doi,
+            "authors": [f"{a.get('given', '')} {a.get('family', '')}".strip()
+                        for a in data.get("author", [])],
+            "year": issued[0][0] if issued and issued[0] else None,
+            "publisher": data.get("publisher"),
+            "type": data.get("type"),
+            "is_retracted": confirmed,
+            "retraction_suspected": data.get("type") in ("retraction", "retraction-notice"),
+        }, "Crossref")
 
-        # --- Cache check ---
-        cache_key = self.cache.make_key("crossref_doi", clean_doi)
+    async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
+        clean_doi = ReferenceResolver.normalize_doi(doi)
+        if not clean_doi:
+            return None
+        cache_key = self.cache.make_key("crossref_doi_v2", clean_doi)
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
-
-        quoted_doi = urllib.parse.quote(clean_doi, safe="")
-        url = f"{self.BASE_URL}/{quoted_doi}"
-
-        res_json = await self.client.get_json(url)
-        if res_json and "message" in res_json:
-            data = res_json["message"]
-            update_to = data.get("update-to", [])
-            is_update_retracted = any(item.get("type") == "retraction" for item in update_to)
-
-            title_list = data.get("title", [])
-            title = title_list[0] if title_list else ""
-
-            is_title_retracted = "retracted" in title.lower() or "retraction" in title.lower()
-            is_type_retracted = data.get("type") in ["retraction", "retraction-notice"]
-            is_retracted = is_update_retracted or is_title_retracted or is_type_retracted
-
-            result = {
-                "title": title,
-                "doi": clean_doi,
-                "publisher": data.get("publisher"),
-                "is_retracted": is_retracted,
-                "type": data.get("type")
-            }
-            self.cache.set(cache_key, result)
-            return result
-        return None
+        url = f"{self.BASE_URL}/{urllib.parse.quote(clean_doi, safe='')}"
+        response = await self.client.get_json(url)
+        if response is None:
+            return None
+        if not isinstance(response.get("message"), dict):
+            raise ProviderError("Crossref returned an invalid work response")
+        result = self._process_work(response["message"])
+        if result["doi"] != clean_doi:
+            raise ProviderError("Crossref returned a different DOI")
+        self.cache.set(cache_key, result)
+        return result
 
     async def search_by_title(self, query: str, rows: int = 5) -> List[Dict[str, Any]]:
-        # --- Cache check ---
-        cache_key = self.cache.make_key("crossref_title", query, str(rows))
+        cache_key = self.cache.make_key("crossref_title_v2", query, str(rows))
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
-
-        quoted_q = urllib.parse.quote(query)
-        url = f"{self.BASE_URL}?query.title={quoted_q}&rows={rows}"
-        res_json = await self.client.get_json(url)
-        if res_json and "message" in res_json:
-            items = res_json.get("message", {}).get("items", [])
-            results = []
-            for item in items:
-                titles = item.get("title", [])
-                t = titles[0] if titles else query
-                t_lower = t.lower()
-                is_retracted = any(
-                    kw in t_lower for kw in ["retracted", "retraction", "withdrawn"]
-                ) or item.get("type") in ["retraction", "retraction-notice"]
-                authors_raw = item.get("author", [])
-                authors = [f"{a.get('given', '')} {a.get('family', '')}".strip() for a in authors_raw]
-                year = None
-                issued = item.get("issued", {}).get("date-parts", [])
-                if issued and issued[0]:
-                    year = issued[0][0]
-
-                results.append({
-                    "title": t,
-                    "doi": item.get("DOI", "").lower() if item.get("DOI") else None,
-                    "authors": authors,
-                    "year": year,
-                    "publisher": item.get("publisher"),
-                    "is_retracted": is_retracted
-                })
-            self.cache.set(cache_key, results)
-            return results
-        return []
+        url = f"{self.BASE_URL}?query.title={urllib.parse.quote(query)}&rows={rows}"
+        response = await self.client.get_json(url)
+        if not response or not isinstance(response.get("message", {}).get("items"), list):
+            raise ProviderError("Crossref search returned an invalid response")
+        results = [self._process_work(item) for item in response["message"]["items"]]
+        self.cache.set(cache_key, results)
+        return results

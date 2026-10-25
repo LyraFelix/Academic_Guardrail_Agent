@@ -21,12 +21,35 @@ class VerificationStatus(str, Enum):
 
 
 class EvidenceStatus(str, Enum):
+    AMBIGUOUS = "AMBIGUOUS"
+    LOCAL_MATCHED = "LOCAL_MATCHED"
+    RETRACTED = "RETRACTED"
+    OFFLINE_NO_MATCH = "OFFLINE_NO_MATCH"
     ARTICLE_MATCHED = "ARTICLE_MATCHED"
     JOURNAL_MATCHED_ARTICLE_UNVERIFIED = "JOURNAL_MATCHED_ARTICLE_UNVERIFIED"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     NOT_FOUND = "NOT_FOUND"
     NO_RETRACTION_FOUND = "NO_RETRACTION_FOUND"
     RETRACTION_SUSPECTED = "RETRACTION_SUSPECTED"
+
+
+class RetractionStatus(str, Enum):
+    """A negative lookup is limited to the consulted sources, never proof of safety."""
+
+    CONFIRMED = "CONFIRMED"
+    SUSPECTED = "SUSPECTED"
+    NO_RECORD = "NO_RECORD"
+    NOT_CHECKED = "NOT_CHECKED"
+
+
+class EvidenceSource(BaseModel):
+    """Where an observation came from; kept separate from the final decision."""
+
+    source: str
+    kind: str
+    identifier: Optional[str] = None
+    detail: Optional[str] = None
+    is_retracted: Optional[bool] = None
 
 
 class Citation(BaseModel):
@@ -51,6 +74,9 @@ class VerificationResult(BaseModel):
     claim: Optional[ContextClaim] = None
     status: VerificationStatus
     risk_level: RiskLevel
+    sources: List[EvidenceSource] = Field(default_factory=list)
+    retraction_status: RetractionStatus = RetractionStatus.NOT_CHECKED
+    verification_scope: str = "REFERENCE_METADATA"
     evidence_status: Optional[EvidenceStatus] = None  # 细粒度证据/基础设施状态
     failure_reason: Optional[str] = None               # TIMEOUT / RATE_LIMITED / PROXY_ERROR
     verified_title: Optional[str] = None
@@ -76,6 +102,7 @@ class VerificationResult(BaseModel):
 
 class DocumentAuditReport(BaseModel):
     document_path: str
+    offline: bool = False
     total_citations: int
     passed_count: int
     notice_count: int = 0

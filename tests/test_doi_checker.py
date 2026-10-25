@@ -32,7 +32,9 @@ def test_valid_doi_resolution():
         "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks.",
         "is_retracted": False
     }]
-    with patch.object(provider.openalex, "search_by_title", AsyncMock(return_value=mock_cand)):
+    with patch.object(provider.openalex, "search_by_title", AsyncMock(return_value=mock_cand)), \
+         patch.object(provider.crossref, "search_by_title", AsyncMock(return_value=[])), \
+         patch.object(provider, "_search_semantic_scholar_candidates", AsyncMock(return_value=[])):
         res = asyncio.run(provider.verify_citation(
             title="Attention Is All You Need", doi=None
         ))

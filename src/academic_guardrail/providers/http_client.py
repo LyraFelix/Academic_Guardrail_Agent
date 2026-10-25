@@ -128,7 +128,7 @@ class AcademicHttpClient:
             except (httpx.TransportError, httpx.TimeoutException) as e:
                 if attempt == self.max_retries:
                     logger.warning(f"Request failed after {self.max_retries} retries: {e}")
-                    return None
+                    raise ProviderError("Academic provider transport failed") from e
                 max_sleep = min(8.0, base_backoff * (2 ** attempt))
                 sleep_time = random.uniform(0.5, max_sleep)
                 await asyncio.sleep(sleep_time)
@@ -137,7 +137,7 @@ class AcademicHttpClient:
                 raise
             except Exception as e:
                 logger.warning(f"Unexpected error querying {url}: {e}")
-                return None
+                raise ProviderError("Academic provider returned an invalid response") from e
 
         return None
 

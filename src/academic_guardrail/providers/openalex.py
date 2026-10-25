@@ -1,10 +1,11 @@
 """OpenAlex API Provider with URL quote escaping, session reuse, retry backoff, and SQLite cache."""
 
-import re
 import urllib.parse
 from typing import Optional, Dict, Any, List
 from academic_guardrail.providers.http_client import AcademicHttpClient
 from academic_guardrail.core.cache import get_cache, SqliteCache
+from academic_guardrail.core.ref_resolver import ReferenceResolver, add_retraction_evidence
+from academic_guardrail.core.exceptions import ProviderError
 
 
 class OpenAlexProvider:
@@ -23,10 +24,12 @@ class OpenAlexProvider:
         self.cache = cache or get_cache()
 
     async def get_by_doi(self, doi: str) -> Optional[Dict[str, Any]]:
-        clean_doi = doi.lower().replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
+        clean_doi = ReferenceResolver.normalize_doi(doi)
+        if not clean_doi:
+            return None
 
         # --- Cache check ---
-        cache_key = self.cache.make_key("openalex_doi", clean_doi)
+        cache_key = self.cache.make_key("openalex_doi_v2", clean_doi)
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
@@ -35,21 +38,14 @@ class OpenAlexProvider:
         url = f"{self.BASE_URL}/{quoted_doi}"
 
         data = await self.client.get_json(url)
-        if data:
+        if data is not None:
+            if not isinstance(data, dict) or not data.get("doi"):
+                raise ProviderError("OpenAlex returned an invalid work response")
             result = self._process_work(data)
+            if result.get("doi") != clean_doi:
+                raise ProviderError("OpenAlex returned a different DOI")
             self.cache.set(cache_key, result)
             return result
-
-        # Check for arXiv DOI format fallback
-        arxiv_match = re.search(r'\d{4}\.\d{4,5}', clean_doi)
-        if arxiv_match:
-            arxiv_id = arxiv_match.group(0)
-            url_arxiv = f"{self.BASE_URL}?search={arxiv_id}&per_page=1"
-            data_ax = await self.client.get_json(url_arxiv)
-            if data_ax and data_ax.get("results"):
-                result = self._process_work(data_ax["results"][0])
-                self.cache.set(cache_key, result)
-                return result
 
         return None
 
@@ -57,7 +53,7 @@ class OpenAlexProvider:
         clean_query = title.replace("[J]", "").replace("[M]", "").replace("[D]", "").replace("[C]", "").strip()
 
         # --- Cache check ---
-        cache_key = self.cache.make_key("openalex_title", clean_query, str(per_page))
+        cache_key = self.cache.make_key("openalex_title_v2", clean_query, str(per_page))
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
@@ -68,7 +64,7 @@ class OpenAlexProvider:
             results = [self._process_work(item) for item in data["results"]]
             self.cache.set(cache_key, results)
             return results
-        return []
+        raise ProviderError("OpenAlex search returned an invalid response")
 
     def _process_work(self, work: Dict[str, Any]) -> Dict[str, Any]:
         abstract = ""
@@ -81,27 +77,19 @@ class OpenAlexProvider:
             word_positions.sort(key=lambda x: x[0])
             abstract = " ".join([w for _, w in word_positions])
 
-        doi = work.get("doi")
-        if doi:
-            doi = doi.replace("https://doi.org/", "").lower()
+        doi = ReferenceResolver.normalize_doi(work.get("doi"))
 
         title = work.get("title") or work.get("display_name") or ""
         authorships = work.get("authorships", [])
         authors = [a.get("author", {}).get("display_name") for a in authorships if a.get("author")]
 
-        is_retracted = (
-            work.get("is_retracted", False)
-            or ("retracted" in title.lower())
-            or (work.get("type") == "retraction-notice")
-        )
-
-        return {
+        return add_retraction_evidence({
             "title": title,
             "doi": doi,
             "publication_year": work.get("publication_year"),
             "authors": authors,
             "abstract": abstract,
-            "is_retracted": is_retracted,
+            "is_retracted": work.get("is_retracted"),
             "openalex_id": work.get("id"),
             "cited_by_count": work.get("cited_by_count", 0)
-        }
+        }, "OpenAlex")

@@ -7,22 +7,17 @@ from typing import Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-try:
-    from sentence_transformers import SentenceTransformer, util
-    _HAS_ST = True
-except ImportError:
-    _HAS_ST = False
-    logger.warning(
-        "[academic_guardrail] sentence-transformers is NOT installed (Core Mode active). "
-        "Semantic matching fallback to lightweight rule-based lexical alignment. "
-        "To enable full multilingual embeddings, run: pip install 'academic-guardrail[full]'"
-    )
+# Detect availability without importing a model runtime at module import time.
+from importlib.util import find_spec
+
+_HAS_ST = find_spec("sentence_transformers") is not None
 
 
 class SemanticMatcher:
     """Computes semantic embedding similarity between claims and abstract sentences."""
 
-    def __init__(self, model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"):
+    def __init__(self, model_name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", use_embeddings: bool = True):
+        self.use_embeddings = use_embeddings
         self.model_name = model_name
         self._model: Optional[Any] = None
         self._model_load_failed: bool = False
@@ -32,6 +27,7 @@ class SemanticMatcher:
             return None
         if self._model is None:
             try:
+                from sentence_transformers import SentenceTransformer
                 self._model = SentenceTransformer(self.model_name)
                 logger.info(f"[academic_guardrail] Successfully loaded vector embedding model: '{self.model_name}'")
             except Exception as e:
@@ -52,11 +48,13 @@ class SemanticMatcher:
         if not text_a or not text_b:
             return 0.0, "rule_lexical_fallback"
 
-        model = self._get_model()
+        # Offline mode bypasses model initialization, including cache/download probes.
+        model = self._get_model() if self.use_embeddings else None
         if model:
             try:
                 emb_a = model.encode(text_a, convert_to_tensor=True)
                 emb_b = model.encode(text_b, convert_to_tensor=True)
+                from sentence_transformers import util
                 sim = float(util.cos_sim(emb_a, emb_b)[0][0])
                 return round(max(0.0, min(1.0, sim)), 2), "vector_embedding"
             except Exception as e:
