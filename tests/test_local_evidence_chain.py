@@ -192,7 +192,7 @@ async def test_unrelated_passages_stay_insufficient_not_negative_evidence(tmp_pa
         assert result.retrieval_status == "NO_RELEVANT_PASSAGE"
         assert result.evidence_text is None
         assert result.evidence_location is None
-        assert result.alignment_state is None
+        assert result.alignment_state == "INSUFFICIENT_EVIDENCE"
         assert "不表示断言为假" in result.message
     finally:
         await service.close()

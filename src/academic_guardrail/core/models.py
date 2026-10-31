@@ -103,6 +103,31 @@ class ParsedDocument(BaseModel):
     diagnostics: List[ParseDiagnostic] = Field(default_factory=list)
 
 
+class SemanticFinding(BaseModel):
+    """A bounded rule observation, with the exact text that triggered it."""
+
+    code: str
+    category: Literal["NUMBER", "NEGATION", "CAUSALITY", "SCOPE", "EVIDENCE"]
+    severity: Literal["CONFLICT", "REVIEW"] = "REVIEW"
+    message: str
+    claim_text: str
+    evidence_text: str
+    evidence_location: Optional[SourceLocation] = None
+
+    evidence_source: Optional[str] = None
+
+
+class ClaimAssessment(BaseModel):
+    state: Literal["TEXT_ALIGNED", "POTENTIAL_CONFLICT", "REVIEW_REQUIRED", "INSUFFICIENT_EVIDENCE"]
+    similarity_score: float = 0.0  # Retrieval score, never a truth probability.
+    message: str
+    evidence_text: str = ""
+    evidence_location: Optional[SourceLocation] = None
+    text_source: Optional[str] = None
+    alignment_engine: str = "rule_lexical_fallback"
+    findings: List[SemanticFinding] = Field(default_factory=list)
+
+
 class VerificationResult(BaseModel):
     citation: Citation
     claim: Optional[ContextClaim] = None
@@ -124,8 +149,9 @@ class VerificationResult(BaseModel):
     retrieval_status: Literal["NOT_REQUESTED", "AVAILABLE", "NO_TEXT", "NO_RELEVANT_PASSAGE", "AMBIGUOUS"] = "NOT_REQUESTED"
     semantic_mode: Optional[str] = None                # "CORE" | "FULL" | "CORE_FALLBACK"
     reference_confidence: Optional[float] = None  # 0.0 ~ 1.0 文献元数据匹配置信度
-    claim_alignment_score: Optional[float] = None  # 0.0 ~ 1.0 语义对齐得分
-    alignment_state: Optional[str] = None  # "SUPPORTED" | "PARTIAL" | "NEUTRAL" | "CONTRADICTED" | "UNVERIFIED"
+    claim_alignment_score: Optional[float] = None  # Retrieval similarity, not a truth probability.
+    alignment_state: Optional[str] = None  # ClaimAssessment.state; old serialized labels remain readable.
+    semantic_findings: List[SemanticFinding] = Field(default_factory=list)
     alignment_engine: Optional[str] = None  # "vector_embedding" | "rule_lexical_fallback"
     resolution_metadata: Optional[Dict[str, Any]] = None  # 详细匹配打分分解 (title_score, author_score, etc.)
     ambiguous_candidates: Optional[List[Dict[str, Any]]] = None  # 歧义文献候选对比列表

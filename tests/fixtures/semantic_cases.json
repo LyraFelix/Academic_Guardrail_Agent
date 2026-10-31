@@ -1,0 +1,477 @@
+{
+  "description": "Synthetic engineering cases; not clinical evidence or a held-out benchmark.",
+  "cases": [
+    {
+      "id": "percent_changed",
+      "category": "numbers",
+      "claim": "The treatment reduced mortality by 90 percent.",
+      "evidence": "The treatment reduced mortality by 10 percent.",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NUMBER_MISMATCH"
+      ]
+    },
+    {
+      "id": "percent_equivalent",
+      "category": "numbers",
+      "claim": "Mortality decreased by 10%.",
+      "evidence": "Mortality decreased by 10 percent.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "dose_equivalent",
+      "category": "numbers",
+      "claim": "The administered dose was 5 mg.",
+      "evidence": "The administered dose was 0.005 g.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "dose_scale",
+      "category": "numbers",
+      "claim": "The administered dose was 5 mg.",
+      "evidence": "The administered dose was 5 g.",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NUMBER_MISMATCH"
+      ]
+    },
+    {
+      "id": "different_dimensions",
+      "category": "numbers",
+      "claim": "The administered dose was 5 mg.",
+      "evidence": "The administered dose was 5 ml.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "UNIT_NOT_COMPARABLE"
+      ]
+    },
+    {
+      "id": "decimal_changed",
+      "category": "numbers",
+      "claim": "The response rate was 3.5%.",
+      "evidence": "The response rate was 3.6%.",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NUMBER_MISMATCH"
+      ]
+    },
+    {
+      "id": "decimal_preserved",
+      "category": "numbers",
+      "claim": "The response rate was 3.5%.",
+      "evidence": "The response rate was 3.5%.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "percent_points",
+      "category": "numbers",
+      "claim": "Accuracy increased by 5%.",
+      "evidence": "Accuracy increased by 5 percentage points.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "UNIT_NOT_COMPARABLE"
+      ]
+    },
+    {
+      "id": "ratio_not_assumed",
+      "category": "numbers",
+      "claim": "The response rate was 10%.",
+      "evidence": "The response rate was 0.1.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "UNIT_NOT_COMPARABLE"
+      ]
+    },
+    {
+      "id": "time_unit_equivalent",
+      "category": "numbers",
+      "claim": "Latency was 50 ms.",
+      "evidence": "Latency was 0.05 s.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "multiple_swapped",
+      "category": "numbers",
+      "claim": "Precision was 90% and recall was 10%.",
+      "evidence": "Precision was 10% and recall was 90%.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "COMPOUND_CLAIM"
+      ]
+    },
+    {
+      "id": "range_changed",
+      "category": "numbers",
+      "claim": "The dose ranged from 10 to 20 mg.",
+      "evidence": "The dose ranged from 30 to 40 mg.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "COMPLEX_QUANTITY"
+      ]
+    },
+    {
+      "id": "citation_ignored",
+      "category": "numbers",
+      "claim": "The response rate was 10% [1].",
+      "evidence": "The response rate was 10%.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "chinese_percent",
+      "category": "numbers",
+      "claim": "治疗使死亡率降低了90%。",
+      "evidence": "治疗使死亡率降低了10%。",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NUMBER_MISMATCH"
+      ]
+    },
+    {
+      "id": "contraction",
+      "category": "negation",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment doesn't improve survival.",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NEGATION_DIFFERENCE"
+      ]
+    },
+    {
+      "id": "curly_contraction",
+      "category": "negation",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment doesn’t improve survival.",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NEGATION_DIFFERENCE"
+      ]
+    },
+    {
+      "id": "both_negative",
+      "category": "negation",
+      "claim": "Treatment does not improve survival.",
+      "evidence": "Treatment doesn't improve survival.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "not_only",
+      "category": "negation",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment not only improves survival but also reduces pain.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "opposite_direction",
+      "category": "negation",
+      "claim": "Treatment increases mortality.",
+      "evidence": "Treatment reduces mortality.",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "DIRECTION_DIFFERENCE"
+      ]
+    },
+    {
+      "id": "negative_opposite",
+      "category": "negation",
+      "claim": "Treatment reduces mortality.",
+      "evidence": "Treatment does not increase mortality.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "NEGATED_OPPOSITE_DIRECTION"
+      ]
+    },
+    {
+      "id": "uncertain_absence",
+      "category": "negation",
+      "claim": "Treatment improves survival.",
+      "evidence": "There is no evidence that treatment improves survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "UNCERTAIN_EVIDENCE"
+      ]
+    },
+    {
+      "id": "not_significant",
+      "category": "negation",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment did not significantly improve survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "SIGNIFICANCE_UNCERTAINTY"
+      ]
+    },
+    {
+      "id": "double_negative",
+      "category": "negation",
+      "claim": "Treatment improves survival.",
+      "evidence": "It is not impossible that treatment improves survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "COMPLEX_NEGATION"
+      ]
+    },
+    {
+      "id": "chinese_negative",
+      "category": "negation",
+      "claim": "该治疗提高了生存率。",
+      "evidence": "该治疗没有提高生存率。",
+      "expected_state": "POTENTIAL_CONFLICT",
+      "required_codes": [
+        "NEGATION_DIFFERENCE"
+      ]
+    },
+    {
+      "id": "chinese_not_only",
+      "category": "negation",
+      "claim": "该治疗提高了生存率。",
+      "evidence": "该治疗不仅提高了生存率，而且降低了疼痛。",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "chinese_uncertain",
+      "category": "negation",
+      "claim": "该治疗提高了生存率。",
+      "evidence": "尚无证据表明该治疗提高了生存率。",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "UNCERTAIN_EVIDENCE"
+      ]
+    },
+    {
+      "id": "causal_from_association",
+      "category": "causality",
+      "claim": "Exercise causes improved survival.",
+      "evidence": "Exercise is associated with improved survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "CAUSAL_OVERSTATEMENT"
+      ]
+    },
+    {
+      "id": "effect_from_association",
+      "category": "causality",
+      "claim": "Treatment reduces mortality.",
+      "evidence": "Treatment is associated with reduced mortality.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "CAUSAL_OVERSTATEMENT"
+      ]
+    },
+    {
+      "id": "causal_identical",
+      "category": "causality",
+      "claim": "Exercise causes improved survival.",
+      "evidence": "Exercise causes improved survival.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "chinese_causality",
+      "category": "causality",
+      "claim": "运动导致生存率提高。",
+      "evidence": "运动与生存率提高相关。",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "CAUSAL_OVERSTATEMENT"
+      ]
+    },
+    {
+      "id": "universal_from_some",
+      "category": "scope",
+      "claim": "Treatment improves survival in all patients.",
+      "evidence": "Treatment improves survival in some patients.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "SCOPE_STRENGTHENED"
+      ]
+    },
+    {
+      "id": "population_changed",
+      "category": "scope",
+      "claim": "Treatment improves survival in humans.",
+      "evidence": "Treatment improves survival in mice.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "POPULATION_CHANGED"
+      ]
+    },
+    {
+      "id": "population_omitted",
+      "category": "scope",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment improves survival in mice.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "SCOPE_OMITTED"
+      ]
+    },
+    {
+      "id": "condition_omitted",
+      "category": "scope",
+      "claim": "The method improves accuracy.",
+      "evidence": "The method improves accuracy only under laboratory conditions.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "SCOPE_OMITTED"
+      ]
+    },
+    {
+      "id": "time_changed",
+      "category": "scope",
+      "claim": "Treatment improves survival after 12 weeks.",
+      "evidence": "Treatment improves survival after 24 weeks.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "TIME_SCOPE_CHANGED"
+      ]
+    },
+    {
+      "id": "modality_removed",
+      "category": "scope",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment may improve survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "MODALITY_STRENGTHENED"
+      ]
+    },
+    {
+      "id": "chinese_modality",
+      "category": "scope",
+      "claim": "该治疗提高了生存率。",
+      "evidence": "该治疗可能提高生存率。",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "MODALITY_STRENGTHENED"
+      ]
+    },
+    {
+      "id": "chinese_scope",
+      "category": "scope",
+      "claim": "治疗对所有患者有效。",
+      "evidence": "治疗仅对部分患者有效。",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "SCOPE_STRENGTHENED"
+      ]
+    },
+    {
+      "id": "upper_bound_removed",
+      "category": "scope",
+      "claim": "The response rate was 60%.",
+      "evidence": "The response rate was up to 60%.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "NUMERIC_QUALIFIER_CHANGED"
+      ]
+    },
+    {
+      "id": "approximation_removed",
+      "category": "scope",
+      "claim": "The response rate was 10%.",
+      "evidence": "The response rate was approximately 10%.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "NUMERIC_QUALIFIER_CHANGED"
+      ]
+    },
+    {
+      "id": "same_population",
+      "category": "scope",
+      "claim": "Treatment improves survival in mice.",
+      "evidence": "Treatment improves survival in mice.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "unrelated_direction",
+      "category": "evidence",
+      "claim": "The drug increases survival in mice.",
+      "evidence": "Tax cuts reduce government revenue.",
+      "expected_state": "INSUFFICIENT_EVIDENCE",
+      "required_codes": []
+    },
+    {
+      "id": "unrelated_tail",
+      "category": "evidence",
+      "claim": "The drug increases survival in mice.",
+      "evidence": "The drug increases survival in mice. Tax cuts reduce government revenue.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "irrelevant_negative_clause",
+      "category": "evidence",
+      "claim": "The method reduces training time.",
+      "evidence": "Although the method did not improve accuracy, the method reduces training time.",
+      "expected_state": "TEXT_ALIGNED",
+      "required_codes": []
+    },
+    {
+      "id": "different_subject",
+      "category": "evidence",
+      "claim": "AlphaDrug increases survival.",
+      "evidence": "BetaDrug reduces survival.",
+      "expected_state": "INSUFFICIENT_EVIDENCE",
+      "required_codes": [
+        "TARGET_MISMATCH"
+      ]
+    },
+    {
+      "id": "different_outcome",
+      "category": "evidence",
+      "claim": "Treatment increases survival.",
+      "evidence": "Treatment reduces blood pressure.",
+      "expected_state": "INSUFFICIENT_EVIDENCE",
+      "required_codes": [
+        "TARGET_MISMATCH"
+      ]
+    },
+    {
+      "id": "conflicting_evidence",
+      "category": "evidence",
+      "claim": "Treatment improves survival.",
+      "evidence": "Treatment improves survival. Treatment does not improve survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "EVIDENCE_DISAGREEMENT"
+      ]
+    },
+    {
+      "id": "compound_coverage",
+      "category": "evidence",
+      "claim": "Treatment improves survival and reduces pain.",
+      "evidence": "Treatment improves survival.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "COMPOUND_CLAIM"
+      ]
+    },
+    {
+      "id": "cross_language",
+      "category": "evidence",
+      "claim": "人工智能提高生产效率。",
+      "evidence": "Artificial intelligence improves productivity.",
+      "expected_state": "REVIEW_REQUIRED",
+      "required_codes": [
+        "LANGUAGE_COMPARISON_UNAVAILABLE"
+      ]
+    },
+    {
+      "id": "empty_evidence",
+      "category": "evidence",
+      "claim": "Treatment improves survival.",
+      "evidence": "",
+      "expected_state": "INSUFFICIENT_EVIDENCE",
+      "required_codes": []
+    }
+  ]
+}

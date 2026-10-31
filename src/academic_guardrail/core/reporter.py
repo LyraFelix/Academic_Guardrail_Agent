@@ -9,7 +9,9 @@ from academic_guardrail.core.models import DocumentAuditReport, RiskLevel
 from academic_guardrail.core.result_formatter import format_counts, format_diagnostic, format_location
 
 SCOPE = (
-    "PASS 表示本次元数据核查或启发式检查未触发风险，不代表论文或断言的科学正确性。"
+    "PASS 仅用于未触发风险的元数据核查；正文语义检查至少标为 NOTICE，需要人工阅读。"
+    "TEXT_ALIGNED 仅表示已检查的文字相符，相似度不是真实性概率。"
+    "这些结果不代表论文或断言的科学正确性。"
     "未发现撤稿记录不等于确认从未撤稿；请结合来源、检索范围与人工阅读判断。"
 )
 EMPTY = "未提取到引用；当前没有可核查条目，不代表文档已通过审查。"
@@ -157,6 +159,13 @@ class ReportGenerator:
             lines.append(f"- **核查范围**: {_markdown(result.verification_scope)}")
             lines.append(f"- **证据状态**: {_markdown(result.evidence_status)}")
             lines.append(f"- **文本检索**: {_markdown(result.retrieval_status)}")
+            if result.alignment_state:
+                lines.append(f"- **语义复核状态**: {_markdown(result.alignment_state)}")
+            for item in result.semantic_findings:
+                lines.append(f"- **语义提示 [{_markdown(item.code)} / {_markdown(item.severity)}]**: {_markdown(item.message)}")
+                lines.append(f"- **触发断言**: {_markdown(item.claim_text)}")
+                lines.append(f"- **触发原文**: {_markdown(item.evidence_text)}")
+                lines.append(f"- **原文位置**: {_markdown(item.evidence_source)} · {_markdown(format_location(item.evidence_location))}")
             if result.failure_reason:
                 lines.append(f"- **查询异常**: {_markdown(result.failure_reason)}")
             if result.evidence_text:
@@ -176,7 +185,7 @@ class ReportGenerator:
                   ("核查状态", result.status), ("撤稿检查", _retraction(result)), ("说明", result.message)]
         for label, attribute in (("证据状态", "evidence_status"), ("失败原因", "failure_reason"),
                                  ("撤稿说明", "retraction_info"), ("核查范围", "verification_scope"),
-                                 ("元数据匹配分数", "reference_confidence"), ("断言对齐分数", "claim_alignment_score"),
+                                 ("元数据匹配分数", "reference_confidence"), ("检索相似度（非真实性概率）", "claim_alignment_score"),
                                  ("对齐状态", "alignment_state"), ("对齐引擎", "alignment_engine"), ("语义模式", "semantic_mode"),
                                  ("文本检索", "retrieval_status"), ("文本来源", "text_source")):
             value = getattr(result, attribute, None)
@@ -190,6 +199,11 @@ class ReportGenerator:
         if result.claim:
             parts.append(f"<p>引用位置：{_escape(result.claim.occurrence_id)} · {_escape(format_location(result.claim.location))}</p>")
             parts.append(f"<h4>正文断言</h4><blockquote>{_escape(result.claim.claim_sentence)}</blockquote>")
+        for item in result.semantic_findings:
+            parts.append(f"<h4>语义提示 · {_escape(item.code)} / {_escape(item.severity)}</h4><p>{_escape(item.message)}</p>")
+            parts.append(f"<p>触发断言</p><blockquote>{_escape(item.claim_text)}</blockquote>")
+            parts.append(f"<p>触发原文</p><blockquote>{_escape(item.evidence_text)}</blockquote>")
+            parts.append(f"<p>原文位置：{_escape(item.evidence_source)} · {_escape(format_location(item.evidence_location))}</p>")
         evidence = result.evidence_text
         if evidence:
             parts.append(f"<h4>证据片段 · {_escape(result.evidence_granularity)}</h4><blockquote>{_escape(evidence)}</blockquote>")

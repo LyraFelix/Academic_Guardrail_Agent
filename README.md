@@ -41,11 +41,14 @@ Optional `python -m pip install -e ".[full]"` enables sentence-transformers. In 
 | `evidence_status` | Online/local match, ambiguity, unavailable provider or other acquisition state |
 | `retraction_status` | `CONFIRMED`, `SUSPECTED`, `NO_RECORD`, `NOT_CHECKED` |
 | `sources` | Source, kind, identifier, description and source retraction flag |
-| `verification_scope` | `REFERENCE_METADATA` or `HEURISTIC_ALIGNMENT` |
+| `verification_scope` | `REFERENCE_METADATA`, `TEXT_RETRIEVAL` or `RULE_BASED_REVIEW` |
+| `alignment_state` | `TEXT_ALIGNED`, `POTENTIAL_CONFLICT`, `REVIEW_REQUIRED`, `INSUFFICIENT_EVIDENCE` |
+| `semantic_findings` | Rule code, explanation, exact claim/evidence text, source and available coordinates |
+| `claim_alignment_score` | Retrieval similarity, never a truth probability |
 
 Identity is resolved before retraction facts are assigned to a citation. An ambiguous candidate does not establish that the cited paper is retracted. Title keywords are only suspected signals. Explicit retraction evidence for the same DOI is retained when merging providers.
 
-`PASS` means the current check did not trigger a risk; it does not establish scientific correctness. `NO_RECORD` is limited to consulted sources, never an assertion of normal status. Failures are kept distinct from empty results. Local matching uses extracted metadata; a title appearing in another paper's bibliography is not identity evidence.
+`PASS` is limited to metadata checks. Claim checks receive at least `NOTICE`, including `TEXT_ALIGNED`; wording agreement does not establish scientific correctness. `NO_RECORD` is limited to consulted sources, never an assertion of normal status. Failures are kept distinct from empty results. Local matching uses extracted metadata; a title appearing in another paper's bibliography is not identity evidence.
 
 ## MCP
 
@@ -86,6 +89,15 @@ Tests isolate caches, block real HTTP and disable embedding models. They validat
 
 Historical scripts and data remain in `benchmarks/` for later reconstruction. Historical accuracy, latency and small-fixture metrics are not presented as verified capabilities of this version; evaluator compatibility, sampling and original model traces still need independent review.
 
+The [phase-three guide](docs/phase_three_guide.md) explains the separate numeric, negation, causal and scope rules. Each finding retains its triggering evidence. Run the synthetic four-category example or replay the real offline CLI/MCP interfaces:
+
+```bash
+academic-guardrail audit docs/examples/phase_three_manuscript.md --refs-dir docs/examples/phase_three_refs --offline -o phase_three_report.html
+python scripts/validate_phase_three.py --output-dir phase_three_validation
+```
+
+The old five-element `evaluate_alignment()` tuple remains callable, but its state labels now use the review vocabulary above. New Python callers should use `assess()` or `assess_passages()` and named fields. Historical benchmark label mappings require migration before use.
+
 ## Limitations
 
-Parsing covers common numbered references, repeated/grouped citations, literal BibTeX fields and common LaTeX citation commands. It does not expand arbitrary TeX macros, cover every author-year style or perform OCR. DOCX extraction covers body paragraphs and tables; complex PDF layout and cross-page sentence order remain limited. Local metadata extraction is heuristic. Matching scores are not calibrated probabilities. Lexical/embedding similarity does not reliably handle numerical, causal or scope differences. Online and local retraction coverage may be incomplete or stale. Human review remains necessary.
+Parsing covers common numbered references, repeated/grouped citations, literal BibTeX fields and common LaTeX citation commands. It does not expand arbitrary TeX macros, cover every author-year style or perform OCR. DOCX extraction covers body paragraphs and tables; complex PDF layout and cross-page sentence order remain limited. Local metadata extraction is heuristic. Matching scores are not calibrated probabilities. Bounded wording checks flag explicit quantities, negation and qualifiers; complex syntax, units, paraphrases, cross-sentence context and translation still require human review. Online and local retraction coverage may be incomplete or stale. No scientific truth or benchmark accuracy claim follows from the regression tests.

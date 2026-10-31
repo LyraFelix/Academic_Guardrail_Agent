@@ -57,25 +57,25 @@ class TestClaimEvaluator:
     def evaluator(self):
         return ClaimEvaluator()
 
-    # ── SUPPORTS cases ──
-    def test_supports_identical(self, evaluator):
+    # Old similarity labels have been replaced by explicit review states.
+    def test_up_to_is_not_an_exact_percentage(self, evaluator):
         res = evaluator.evaluate_alignment(
             "Visual hallucinations occur in 60% of Parkinson's patients.",
             "Visual hallucinations occur in up to 60% of patients with Parkinson's disease."
         )
         score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
         assert score >= 0.25
-        assert alignment_state in ("SUPPORTED", "PARTIAL")
-        assert "Polarity mismatch" not in reason
+        assert alignment_state == "REVIEW_REQUIRED"
+        assert "数量限定不同" in reason
 
-    def test_supports_paraphrase(self, evaluator):
+    def test_unrecognized_paraphrase_requires_review(self, evaluator):
         res = evaluator.evaluate_alignment(
             "STING activation stimulates type I interferon production.",
             "Activation of the STING pathway induces robust type I interferon responses."
         )
         score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
         assert score >= 0.25
-        assert alignment_state in ("SUPPORTED", "PARTIAL")
+        assert alignment_state == "REVIEW_REQUIRED"
 
     # ── CONTRADICTS cases ──
     def test_contradicts_increase_vs_inhibit(self, evaluator):
@@ -84,61 +84,68 @@ class TestClaimEvaluator:
             "AMPK activation inhibits cell proliferation in multiple cancer cell lines."
         )
         score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
-        assert alignment_state == "CONTRADICTED"
-        assert score <= 0.20
+        # Cancer cell lines and generic cell proliferation differ in scope.
+        assert alignment_state == "REVIEW_REQUIRED"
+        assert "相反的方向" in reason
 
     def test_negation_scope_does_not_significantly_increase(self, evaluator):
-        """Adverbial inserted negation 'does not significantly increase' should be recognized as negative polarity."""
+        """Nonsignificance is not proof of an absent or reversed effect."""
         res = evaluator.evaluate_alignment(
             "The proposed method significantly increases classification accuracy.",
             "Experimental results demonstrate that the method does not significantly increase accuracy."
         )
-        assert res[3] == "CONTRADICTED"
+        assert res[3] == "REVIEW_REQUIRED"
+        assert "统计不显著" in res[1]
 
     def test_negation_scope_failed_to_markedly_lower(self, evaluator):
-        """Scope-aware negation 'failed to markedly lower' should invert lower (negative) into positive retention."""
+        """Keep a local negation finding even when wording needs review."""
         res = evaluator.evaluate_alignment(
             "Treatment significantly lowers serum cholesterol levels.",
             "Clinical trials showed that the treatment failed to markedly lower serum cholesterol."
         )
-        assert res[3] == "CONTRADICTED"
+        assert res[3] == "REVIEW_REQUIRED"
+        assert "肯定/否定差异" in res[1]
 
     def test_negation_scope_chinese_adverb(self, evaluator):
-        """Chinese negation scope '未显著提升' should be recognized as negative polarity."""
+        """Chinese nonsignificance also requires review."""
         res = evaluator.evaluate_alignment(
             "该方案显著提升了企业生产效率",
             "实证分析表明，该方案未显著提升企业生产效率"
         )
-        assert res[3] == "CONTRADICTED"
+        assert res[3] == "REVIEW_REQUIRED"
+        assert "统计不显著" in res[1]
 
     def test_contradicts_reduce_vs_did_not_lower(self, evaluator):
         res = evaluator.evaluate_alignment(
             "Vitamin D supplementation reduces total cardiovascular events.",
             "Randomized trial showed Vitamin D did not lower cardiovascular risk."
         )
-        assert res[3] == "CONTRADICTED"
+        # Event counts and risk are not interchangeable outcome measures.
+        assert res[3] == "REVIEW_REQUIRED"
+        assert "尚未完整对应" in res[1]
 
     def test_contradicts_elevate_vs_not_increase(self, evaluator):
         res = evaluator.evaluate_alignment(
             "Statins significantly elevate blood pressure in hypertensive patients.",
             "Statins do not increase blood pressure and slightly attenuate hypertension."
         )
-        assert res[3] == "CONTRADICTED"
+        assert res[3] == "REVIEW_REQUIRED"
+        assert "肯定/否定差异" in res[1]
 
     def test_contradicts_accelerate_vs_slow_down(self, evaluator):
         res = evaluator.evaluate_alignment(
             "Calorie restriction accelerates cellular aging process.",
             "Caloric restriction slows down biological aging and extends lifespan."
         )
-        assert res[3] == "CONTRADICTED"
+        assert res[3] == "INSUFFICIENT_EVIDENCE"
 
     def test_clause_level_polarity_isolation(self, evaluator):
         """Negation in an irrelevant sub-clause ('did not improve accuracy') should not invert positive claim on another sub-clause."""
         claim = "The proposed algorithm significantly reduces training time."
         ref_sentence = "Although the model did not improve accuracy, it significantly reduced training time across all benchmark tasks."
         res = evaluator.evaluate_alignment(claim, ref_sentence)
-        assert res[3] != "CONTRADICTED"
-        assert res[3] in ("SUPPORTED", "PARTIAL")
+        assert res[3] == "REVIEW_REQUIRED"  # Unresolved 'it' and benchmark scope.
+        assert "肯定/否定差异" not in res[1]
 
     # ── NEUTRAL cases ──
     def test_neutral_unrelated_topics(self, evaluator):
@@ -147,7 +154,7 @@ class TestClaimEvaluator:
             "Deep learning models require large GPU memory during training."
         )
         assert res[0] < 0.25
-        assert res[3] == "NEUTRAL"
+        assert res[3] == "INSUFFICIENT_EVIDENCE"
 
     # ── Edge cases ──
     def test_empty_claim(self, evaluator):

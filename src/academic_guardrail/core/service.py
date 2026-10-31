@@ -13,7 +13,6 @@ from academic_guardrail.core.parser import DocumentParser
 from academic_guardrail.core.ref_resolver import ReferenceResolver
 from academic_guardrail.core.ref_store import LocalRefStore
 from academic_guardrail.core.reference_decision import decide_reference
-from academic_guardrail.core.passages import locate_excerpt
 from academic_guardrail.providers.chinese_academic import ChineseAcademicProvider
 from academic_guardrail.providers.claim_eval import ClaimEvaluator
 from academic_guardrail.providers.retraction_db import OfflineRetractionDB
@@ -192,47 +191,37 @@ class AuditService:
             if result.retrieval_status != "AMBIGUOUS":
                 result.retrieval_status = "NO_TEXT"
             result.status, result.risk_level = VerificationStatus.UNVERIFIED, RiskLevel.NOTICE
+            result.alignment_state = "INSUFFICIENT_EVIDENCE"
             result.message += " 文献元数据已匹配，但没有可用文本核验这处正文引用。"
             result.evidence_text = None
             return result
-        # Rank all passages, including later PDF pages. The threshold only
-        # suppresses unrelated retrieval; it is not a truth/support threshold.
-        ranked = [(self.evaluator.find_best_matching_sentence(claim.claim_sentence, p.text)[1], p)
-                  for p in prepared.passages]
-        relevance, passage = max(ranked, key=lambda item: item[0])
-        if relevance < 0.15:
+        assessment = self.evaluator.assess_passages(claim.claim_sentence, prepared.passages)
+        result.alignment_state = assessment.state
+        result.alignment_engine = assessment.alignment_engine
+        result.claim_alignment_score = assessment.similarity_score
+        result.semantic_findings = assessment.findings
+        if assessment.state == "INSUFFICIENT_EVIDENCE":
             result.retrieval_status = "NO_RELEVANT_PASSAGE"
             result.status, result.risk_level = VerificationStatus.UNVERIFIED, RiskLevel.NOTICE
-            result.evidence_text = None
-            result.message += " 可用文本中没有找到达到检索阈值的片段；这不表示断言为假。"
+            result.message += " 未找到主体和指标对应的可比文本；这不表示断言为假。"
             return result
-        score, reason, sentence, state, engine = self.evaluator.evaluate_alignment(
-            claim.claim_sentence, passage.text)
-        result.verification_scope = "HEURISTIC_ALIGNMENT"
+        result.verification_scope = "RULE_BASED_REVIEW"
         result.retrieval_status = "AVAILABLE"
-        result.text_source = passage.source_kind
-        result.claim_alignment_score = score
-        result.alignment_state = state
-        result.alignment_engine = engine
-        result.semantic_mode = ("FULL" if engine == "vector_embedding" else
+        result.text_source = assessment.text_source
+        result.semantic_mode = ("FULL" if assessment.alignment_engine == "vector_embedding" else
                                 "CORE_FALLBACK" if self.evaluator.semantic_matcher._model_load_failed else "CORE")
-        result.evidence_text = sentence if sentence and sentence in passage.text else passage.text
-        result.evidence_location = locate_excerpt(passage, result.evidence_text)
-        result.evidence_granularity = "SENTENCE" if sentence and sentence in passage.text else "PASSAGE"
-        descriptions = {
-            "SUPPORTED": "文本具有较高相似度，仍需人工确认其是否支持断言。",
-            "PARTIAL": "文本部分相似，请检查是否缺少条件或限定范围。",
-            "NEUTRAL": "未找到直接对应的文本，请人工检查全文。",
-            "CONTRADICTED": "检测到可能的否定或方向冲突，请人工检查语境。",
-        }
-        if state == "CONTRADICTED":
+        result.evidence_text = assessment.evidence_text
+        result.evidence_location = assessment.evidence_location
+        result.evidence_granularity = "CLAUSE"
+        if assessment.state == "POTENTIAL_CONFLICT":
             result.status, result.risk_level = VerificationStatus.CLAIM_MISMATCH, RiskLevel.WARNING
-        elif state in {"NEUTRAL", "PARTIAL"}:
+        elif assessment.state == "REVIEW_REQUIRED":
             result.status, result.risk_level = VerificationStatus.CLAIM_MISMATCH, RiskLevel.NOTICE
-        elif state != "SUPPORTED":
-            result.status, result.risk_level = VerificationStatus.UNVERIFIED, RiskLevel.WARNING
-        result.message += " 启发式文本比对：" + descriptions.get(state, "对齐状态未知，请人工确认。")
-        result.message += f" 匹配分数 {score:.2f}。{reason} 此结果不构成事实蕴含或学术诚信结论。"
+        else:
+            # Metadata can remain VALID; a claim check never receives PASS.
+            result.risk_level = RiskLevel.NOTICE
+        result.message += " 规则文字检查：" + assessment.message
+        result.message += f" 检索相似度 {assessment.similarity_score:.2f}（非真实性概率）。"
         return result
 
     async def audit_document(self, file_path: str,

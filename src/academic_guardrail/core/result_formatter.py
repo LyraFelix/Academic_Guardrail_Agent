@@ -52,6 +52,13 @@ def format_result(result: VerificationResult, detail: str = "compact") -> str:
     if result.claim:
         lines.append(f"引用位置: {result.claim.occurrence_id or '未编号'} · {format_location(result.claim.location)}")
         lines.append(f"正文断言: {result.claim.claim_sentence}")
+    if result.alignment_state:
+        lines.append(f"语义复核状态: {result.alignment_state}")
+    for item in result.semantic_findings:
+        lines.append(f"语义提示 [{item.code}/{item.severity}]: {item.message}")
+        lines.append(f"触发断言: {item.claim_text}")
+        lines.append(f"触发原文: {item.evidence_text}")
+        lines.append(f"原文位置: {item.evidence_source or '未标注来源'} · {format_location(item.evidence_location)}")
     if result.evidence_text:
         text = result.evidence_text
         if detail == "compact" and len(text) > 200:
@@ -62,7 +69,7 @@ def format_result(result: VerificationResult, detail: str = "compact") -> str:
         if result.reference_confidence is not None:
             lines.append(f"Reference Confidence: {result.reference_confidence:.2f}（匹配分数，非正确率）")
         if result.claim_alignment_score is not None:
-            lines.append(f"Claim Alignment Score: {result.claim_alignment_score:.2f} ({result.alignment_engine})")
+            lines.append(f"Claim Alignment Score（检索相似度，非真实性概率）: {result.claim_alignment_score:.2f} ({result.alignment_engine})")
         lines.append(f"Alignment State: {result.alignment_state or 'NOT_EVALUATED'}")
         if result.resolution_metadata:
             lines.append(f"消歧打分分解: {result.resolution_metadata}")

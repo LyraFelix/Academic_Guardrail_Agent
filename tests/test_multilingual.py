@@ -18,7 +18,7 @@ class TestChineseClaimAlignment:
         res = evaluator.evaluate_alignment(claim, abstract)
         score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
         assert score >= 0.20
-        assert alignment_state in ("SUPPORTED", "PARTIAL")
+        assert alignment_state == "REVIEW_REQUIRED"  # Additional outcome/modifiers.
 
     def test_chinese_contradicts(self, evaluator):
         """Chinese claim with polarity inversion should be detected."""
@@ -26,8 +26,8 @@ class TestChineseClaimAlignment:
         abstract = "研究表明人工智能并未增加失业率，反而降低了结构性失业"
         res = evaluator.evaluate_alignment(claim, abstract)
         score, reason, _, alignment_state = res[0], res[1], res[2], res[3]
-        assert alignment_state == "CONTRADICTED"
-        assert score <= 0.30 or "Polarity" in reason or "极性" in reason
+        assert alignment_state == "POTENTIAL_CONFLICT"
+        assert "肯定/否定差异" in reason
 
     def test_chinese_sentence_splitting(self, evaluator):
         """Chinese full-width punctuation (。！？；) should properly split text into sentence units."""
@@ -69,10 +69,11 @@ class TestMixedLanguageClaims:
         )
         score, alignment_state = res[0], res[3]
         assert score >= 0.25
-        assert alignment_state in ("SUPPORTED", "PARTIAL")
+        assert alignment_state == "REVIEW_REQUIRED"
+        assert "相关性不能直接升级为因果" in res[1]
 
     def test_cross_lingual_same_semantics_high(self, evaluator):
-        """Cross-lingual regression case: Chinese claim vs semantically identical English abstract."""
+        """Cross-language retrieval never certifies translation/semantic equivalence."""
         claim_1 = "自动化技术改变劳动力市场结构"
         abstract_1 = "Automation technologies reshape labor demand and employment patterns."
 
@@ -80,7 +81,8 @@ class TestMixedLanguageClaims:
         score_1, alignment_state_1 = res_1[0], res_1[3]
 
         assert score_1 >= 0.20
-        assert alignment_state_1 in ("SUPPORTED", "PARTIAL")
+        assert alignment_state_1 == "REVIEW_REQUIRED"
+        assert "跨语言文字" in res_1[1]
 
         claim_2 = "人工智能技术的发展可能改变劳动力市场结构"
         abstract_2 = "Technological progress in artificial intelligence has significant implications for labor market transformation."
@@ -89,7 +91,7 @@ class TestMixedLanguageClaims:
         score_2, alignment_state_2 = res_2[0], res_2[3]
 
         assert score_2 >= 0.20
-        assert alignment_state_2 in ("SUPPORTED", "PARTIAL")
+        assert alignment_state_2 == "REVIEW_REQUIRED"
 
     def test_technical_terms_overlap(self):
         """Technical terms like gene names should have high char-ngram overlap."""

@@ -16,7 +16,5 @@ class GuardrailConfig:
     REFERENCE_MEDIUM_MARGIN: float = 0.05         # Margin threshold for MEDIUM confidence match
     REFERENCE_TITLE_HARD_FLOOR: float = 0.30       # Minimum reliable title similarity floor
 
-    # ── Claim Alignment & Polarity Thresholds ──
-    STRONG_ALIGNMENT_THRESHOLD: float = 0.50       # Tier boundary for SUPPORTED (High Alignment)
-    WEAK_ALIGNMENT_THRESHOLD: float = 0.30         # Tier boundary for PARTIAL (Moderate Alignment)
-    POLARITY_CONTRADICTION_SCORE: float = 0.15     # Default score returned on explicit polarity inversion
+    # Retrieval only; never a support/contradiction threshold.
+    CLAIM_RETRIEVAL_MIN_SCORE: float = 0.15

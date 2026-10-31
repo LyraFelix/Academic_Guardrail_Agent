@@ -64,7 +64,7 @@ async def test_audit_document_claims_progressive_disclosure(tmp_path):
         evidence_granularity="SENTENCE",
         reference_confidence=0.95,
         claim_alignment_score=0.90,
-        alignment_state="SUPPORTED",
+        alignment_state="TEXT_ALIGNED",
         alignment_engine="vector_embedding",
         resolution_metadata={"title_score": 1.0, "rank_margin": 0.5},
         message="🟢 高度一致"
@@ -91,7 +91,7 @@ async def test_audit_document_claims_progressive_disclosure(tmp_path):
         # Detailed
         out_detailed = await audit_document_claims(str(doc), detail="detailed")
         assert "Payload Detail: DETAILED" in out_detailed
-        assert "Claim Alignment Score: 0.90 (vector_embedding)" in out_detailed
+        assert "Claim Alignment Score（检索相似度，非真实性概率）: 0.90 (vector_embedding)" in out_detailed
 
         # Debug
         out_debug = await audit_document_claims(str(doc), detail="debug")

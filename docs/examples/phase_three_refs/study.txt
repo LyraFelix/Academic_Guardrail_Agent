@@ -1,0 +1,15 @@
+A synthetic study of semantic review rules
+Alice Smith
+2024
+doi: 10.1234/semantic-demo
+
+Abstract: Synthetic software test data. These are not research findings.
+
+Results
+Trial therapy reduced mortality by 10%.
+
+Trial therapy does not improve pain relief.
+
+Exercise is associated with improved mobility.
+
+Training may improve accuracy in some adults.

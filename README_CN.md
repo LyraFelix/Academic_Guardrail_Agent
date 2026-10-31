@@ -48,13 +48,16 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 | `evidence_status` | 匹配到在线文章、本地文件、歧义、查询失败等原因 |
 | `retraction_status` | `CONFIRMED` / `SUSPECTED` / `NO_RECORD` / `NOT_CHECKED` |
 | `sources` | 数据源、证据类型、标识符、说明及来源自身的撤稿标记 |
-| `verification_scope` | `REFERENCE_METADATA`、`TEXT_RETRIEVAL` 或 `HEURISTIC_ALIGNMENT` |
+| `verification_scope` | `REFERENCE_METADATA`、`TEXT_RETRIEVAL` 或 `RULE_BASED_REVIEW` |
+| `alignment_state` | `TEXT_ALIGNED`、`POTENTIAL_CONFLICT`、`REVIEW_REQUIRED`、`INSUFFICIENT_EVIDENCE` |
+| `semantic_findings` | 规则代码、解释、触发断言、证据原文、来源和可用坐标 |
+| `claim_alignment_score` | 检索相似度，不是真实性概率 |
 | `retrieval_status` | 文本可用、无文本、低相关性或本地歧义；与文献身份状态分开 |
 | `text_source` / `evidence_location` | 在线摘要、本地摘要或全文；本地摘录保留文件、页码（适用时）和字符位置 |
 
 先确认文献身份，再归属撤稿证据。歧义候选即使带撤稿标记，也不能直接说用户引用的是撤稿论文。标题中出现 “retraction” 只作为疑似线索；同 DOI 的明确撤稿证据不会被另一来源的否定标记覆盖。
 
-`PASS` 仅表示本次核验范围内未触发风险。`NO_RECORD` 仅表示查询过的来源没有记录，不能解释成“状态正常”。查询超时、限流与无结果分开保留。本地文件通过标题等元数据匹配；另一论文参考文献列表中出现标题，不构成匹配依据。
+`PASS` 仅用于元数据核查；正文检查至少标为 `NOTICE`，即使 `TEXT_ALIGNED` 也需要人工阅读。`NO_RECORD` 仅表示查询过的来源没有记录，不能解释成“状态正常”。查询超时、限流与无结果分开保留。本地文件通过标题等元数据匹配；另一论文参考文献列表中出现标题，不构成匹配依据。
 
 ## MCP 使用
 
@@ -101,11 +104,20 @@ python -m pytest tests -q
 
 历史 `benchmarks/` 脚本和数据保留供后续整理。目前不再把历史准确率、延迟或小样例匹配率作为本版本的已验证能力：评测入口、样本选择与原始模型调用记录仍需独立重建和核验。
 
+[第三阶段代码导读](docs/phase_three_guide.md) 解释数字、否定、因果、范围规则及其人工复核边界。四类问题的合成演示与实际入口验收：
+
+```powershell
+academic-guardrail audit docs/examples/phase_three_manuscript.md --refs-dir docs/examples/phase_three_refs --offline -o phase_three_report.html
+python scripts/validate_phase_three.py --output-dir phase_three_validation
+```
+
+旧 `evaluate_alignment()` 五元素元组结构保留，状态标签已改为上表中的复核词汇。新代码建议调用 `assess()` / `assess_passages()` 读取命名字段；历史评测的标签映射需要单独迁移。
+
 ## 当前局限
 
 - 解析器覆盖常见编号引用、重复/分组引用、字面量 BibTeX 和常见 LaTeX 关联；不执行任意宏，不支持所有作者年份制格式。Word 覆盖正文和表格；PDF 不做 OCR，复杂排版仍可能丢失或错序。
 - 本地标题、作者、年份来自简易抽取；匹配分数不是校准后的概率，歧义时需要补全信息。
-- 词面规则和嵌入相似度不能可靠判断数值、因果、限定条件或真实蕴含。
+- 新增规则可以提示明确的数值、否定和限定差异；复杂语法、单位、同义改写、跨句语境和跨语言仍可能遗漏或过度提示，不构成真实蕴含判断。
 - 在线来源可能缺摘要、延迟索引或不可用；撤稿数据库也可能不完整或过期。
 
 这些限制应在演示和简历介绍时明确。可以描述已实现的多源查询、来源保留、统一判定、离线模式和回归测试，不宜宣称“自动保证论文正确”或未经复现的准确率。

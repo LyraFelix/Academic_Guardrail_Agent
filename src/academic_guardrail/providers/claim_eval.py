@@ -1,280 +1,197 @@
-"""Heuristic claim alignment using lexical overlap and optional embeddings.
+"""Retrieve comparable text, then run bounded, inspectable wording checks.
 
-Scores and negation flags are review hints, not factual entailment judgments.
-Rules and thresholds require separate evaluation before accuracy claims.
+Similarity is a retrieval aid. Neither a high score nor TEXT_ALIGNED establishes
+scientific support. Unknown constructions stay available for human review.
 """
 
+from dataclasses import dataclass
 import re
-import difflib
-from typing import Tuple, Dict, Any, List, Optional
-from academic_guardrail.core.semantic_matcher import SemanticMatcher
+
+from academic_guardrail.core.claim_checks.numbers import check_numbers, quantities
+from academic_guardrail.core.claim_checks.polarity import check_polarity, direction, negated, predicate_key
+from academic_guardrail.core.claim_checks.scope import check_scope
+from academic_guardrail.core.claim_checks.text import (
+    clause_units, comparison_uncertain, different_languages, finding,
+    normalize, relation, sentence_units, target_mismatch,
+)
+from academic_guardrail.core.models import ClaimAssessment, EvidencePassage, SemanticFinding
 from academic_guardrail.core.config import GuardrailConfig
-
-# Standard academic synonyms for domain-agnostic lexical expansion
-ACADEMIC_SYNONYMS = {
-    "enable": {"allow", "permit", "facilitate", "enable"},
-    "allow": {"enable", "permit", "facilitate", "allow"},
-    "reduce": {"decrease", "lower", "diminish", "curtail", "reduce"},
-    "decrease": {"reduce", "lower", "diminish", "decrease"},
-    "promote": {"increase", "elevate", "enhance", "stimulate", "promote"},
-    "increase": {"promote", "elevate", "enhance", "stimulate", "increase"},
-    "mortality": {"death", "mortality", "deaths", "fatalities"},
-    "death": {"mortality", "death", "deaths"},
-    "overall": {"all-cause", "total", "overall"},
-    "all-cause": {"overall", "total", "all-cause"},
-    "diabetic": {"diabetic", "diabetes", "diabet"},
-    "diabetes": {"diabetic", "diabetes", "diabet"},
-    "diabet": {"diabetic", "diabetes", "diabet"},
-    "patient": {"patient", "patients"},
-    "patients": {"patient", "patients"},
-}
-
-# Universal directional antonym sets for generic polarity inversion detection
-DIRECTIONAL_ANTONYMS = [
-    (
-        {"increase", "increases", "increased", "increasing", "promote", "promotes", "promoted", "elevate", "elevates", "elevated", "accelerate", "accelerates", "accelerated", "提升", "增加", "促进", "加速"},
-        {"inhibit", "inhibits", "inhibited", "decrease", "decreases", "decreased", "reduce", "reduces", "reduced", "prevent", "prevents", "slow down", "slows down", "slowed down", "抑制", "降低", "减少", "阻碍"}
-    )
-]
+from academic_guardrail.core.passages import locate_excerpt
+from academic_guardrail.core.semantic_matcher import SemanticMatcher
+from academic_guardrail.core.text_similarity import ACADEMIC_SYNONYMS, UniversalLexicalMatcher
 
 
-class UniversalLexicalMatcher:
-    """Domain-agnostic surface lexical matching using stemming, synonyms, N-grams, and sequence ratios."""
+@dataclass
+class Candidate:
+    text: str
+    passage: EvidencePassage
+    score: float
+    engine: str
+    findings: list[SemanticFinding]
 
-    @staticmethod
-    def stem_word(word: str) -> str:
-        w = word.lower().strip()
-        for suffix in ['ing', 'tion', 'ness', 'ment', 'able', 'ed', 'es', 's']:
-            if len(w) > 4 and w.endswith(suffix):
-                return w[:-len(suffix)]
-        return w
-
-    @classmethod
-    def get_stems(cls, text: str) -> set:
-        words = re.findall(r'\b\w{2,}\b', text.lower())
-        stems = set()
-        for w in words:
-            stems.add(cls.stem_word(w))
-            if w in ACADEMIC_SYNONYMS:
-                stems.update([cls.stem_word(syn) for syn in ACADEMIC_SYNONYMS[w]])
-        return stems
-
-    @staticmethod
-    def get_char_ngrams(text: str, n: int = 3) -> set:
-        clean = re.sub(r'[^\w\s]', '', text.lower()).strip()
-        if not clean:
-            return set()
-        return set(clean[i:i+n] for i in range(len(clean) - n + 1))
-
-    @classmethod
-    def compute_lexical_similarity(cls, claim: str, sentence: str) -> float:
-        """Pure language-agnostic surface lexical overlap score with synonym expansion."""
-        if not claim or not sentence:
-            return 0.0
-
-        c_stems = cls.get_stems(claim)
-        s_stems = cls.get_stems(sentence)
-        c_ngrams = cls.get_char_ngrams(claim, n=3)
-        s_ngrams = cls.get_char_ngrams(sentence, n=3)
-
-        stem_overlap = (len(c_stems.intersection(s_stems)) / float(max(len(c_stems), 1))) if c_stems and s_stems else 0.0
-        ngram_jaccard = (len(c_ngrams.intersection(s_ngrams)) / float(max(len(c_ngrams.union(s_ngrams)), 1))) if c_ngrams and s_ngrams else 0.0
-        seq_sim = difflib.SequenceMatcher(None, claim.lower(), sentence.lower()).ratio()
-
-        return round(0.50 * stem_overlap + 0.30 * ngram_jaccard + 0.20 * seq_sim, 2)
-
-    @classmethod
-    def compute_cross_lingual_similarity(cls, claim: str, sentence: str) -> float:
-        return cls.compute_lexical_similarity(claim, sentence)
+    def attach_source(self, findings: list[SemanticFinding]) -> list[SemanticFinding]:
+        for item in findings:
+            item.evidence_location = locate_excerpt(self.passage, item.evidence_text)
+            item.evidence_source = self.passage.source_kind
+        return findings
 
 
-class UniversalSyntacticNegationAnalyzer:
-    """Language-agnostic syntactic negation and directional polarity analyzer.
-    Detects universal negation markers (not, no, never, failed to, 未, 不)
-    and directional antonym inversions on shared core concepts at sub-clause level.
-    """
-
-    ENGLISH_NEGATION_MARKERS = {
-        "not", "no", "never", "cannot", "can't", "fail", "failed", "fails",
-        "failing", "without", "neither", "nor", "lack", "lacks", "lacking", "lacked"
-    }
-
-    CHINESE_NEGATION_MARKERS = {"未", "不", "没有", "未曾", "无法", "未能", "毫无", "并未"}
-
-    CLAUSE_SPLIT_PATTERN = re.compile(
-        r'(?:[;,]|\b(?:although|however|but|while|whereas|despite|even though|in contrast)\b|虽然|但是|然而|尽管|但)',
-        re.IGNORECASE
-    )
-
-    @classmethod
-    def split_clauses(cls, text: str) -> List[str]:
-        """Splits complex compound sentences into sub-clauses for localized polarity scope analysis."""
-        if not text:
-            return []
-        raw_clauses = [c.strip() for c in cls.CLAUSE_SPLIT_PATTERN.split(text) if len(c.strip()) >= 3]
-        return raw_clauses if raw_clauses else [text]
-
-    @classmethod
-    def find_most_relevant_clause(cls, claim: str, sentence: str) -> str:
-        """Locates the single sub-clause in sentence with highest stem overlap to claim."""
-        clauses = cls.split_clauses(sentence)
-        if len(clauses) <= 1:
-            return sentence
-
-        c_stems = UniversalLexicalMatcher.get_stems(claim)
-        best_clause = clauses[0]
-        max_overlap = -1
-
-        for cl in clauses:
-            cl_stems = UniversalLexicalMatcher.get_stems(cl)
-            overlap = len(c_stems.intersection(cl_stems))
-            if overlap > max_overlap:
-                max_overlap = overlap
-                best_clause = cl
-
-        return best_clause
-
-    @classmethod
-    def is_sentence_negated(cls, text: str, target_stems: Optional[set] = None) -> bool:
-        t_lower = text.lower()
-        words = re.findall(r'\b[a-zA-Z]+\b', t_lower)
-
-        # 1. English syntactic negation check
-        for idx, w in enumerate(words):
-            if w in cls.ENGLISH_NEGATION_MARKERS:
-                if target_stems:
-                    window = [UniversalLexicalMatcher.stem_word(x) for x in words[idx+1:idx+5]]
-                    if any(st in target_stems for st in window):
-                        return True
-                else:
-                    return True
-
-        # 2. Chinese negation check
-        for m in cls.CHINESE_NEGATION_MARKERS:
-            if m in text:
-                return True
-
-        return False
-
-    @classmethod
-    def check_negation_conflict(cls, claim: str, sentence: str) -> bool:
-        """Determines if there is a direct syntactic negation or directional antonym inversion at clause level."""
-        c_text = claim.lower()
-        target_clause = cls.find_most_relevant_clause(claim, sentence)
-        s_text = target_clause.lower()
-
-        # Check directional antonym pairs (e.g. increase vs inhibit / slow down)
-        for pos_set, neg_set in DIRECTIONAL_ANTONYMS:
-            c_has_pos = any(w in c_text for w in pos_set)
-            c_has_neg = any(w in c_text for w in neg_set)
-            s_has_pos = any(w in s_text for w in pos_set)
-            s_has_neg = any(w in s_text for w in neg_set)
-
-            if (c_has_pos and s_has_neg and not c_has_neg) or (c_has_neg and s_has_pos and not s_has_neg):
-                return True
-
-        # Check Chinese negation conflict
-        c_cn_neg = any(m in c_text for m in cls.CHINESE_NEGATION_MARKERS)
-        s_cn_neg = any(m in s_text for m in cls.CHINESE_NEGATION_MARKERS)
-        if c_cn_neg != s_cn_neg:
-            # Verify Chinese character overlap
-            c_chars = set(c_text) - set(" ,.，。!！?？\t\n")
-            s_chars = set(s_text) - set(" ,.，。!！?？\t\n")
-            if len(c_chars.intersection(s_chars)) >= 3:
-                return True
-
-        # Check English syntactic negation on shared stems
-        c_stems = UniversalLexicalMatcher.get_stems(claim)
-        s_stems = UniversalLexicalMatcher.get_stems(target_clause)
-        shared_stems = c_stems.intersection(s_stems)
-
-        if shared_stems:
-            c_neg = cls.is_sentence_negated(claim, shared_stems)
-            s_neg = cls.is_sentence_negated(target_clause, shared_stems)
-            if c_neg != s_neg:
-                return True
-
-        return False
+def compound_claim(text: str) -> bool:
+    """Multiple asserted outcomes need individual citations/checks."""
+    value = normalize(text)
+    if len(sentence_units(text)) > 1:
+        return True
+    if re.search(r"\b(?:and|but|whereas)\b|并且|且|而且", value):
+        return True
+    return False
 
 
 class ClaimEvaluator:
-    """General-purpose two-stage claim evaluator.
-    Stage 1: Sentence-Level Rationale Selection (splits abstract into sentences and finds best matching context).
-    Stage 2: Semantic & Lexical Fusion with Universal Syntactic Negation Conflict Detection.
-    """
+    """Separate candidate retrieval, rule findings and the final review state."""
 
     def __init__(self, use_embeddings: bool = True):
         self.semantic_matcher = SemanticMatcher(use_embeddings=use_embeddings)
 
-    def split_sentences(self, text: str) -> List[str]:
-        """Splits multi-sentence abstract or full-text into sentence units (supports Chinese & English)."""
-        if not text:
-            return []
-        raw_sents = re.split(r'[。！？；.!?;\n]+\s*', text)
-        return [s.strip() for s in raw_sents if len(s.strip()) >= 4]
+    def _similarity(self, claim: str, text: str) -> tuple[float, str]:
+        semantic, engine = self.semantic_matcher.compute_similarity_with_engine(claim, text)
+        lexical = UniversalLexicalMatcher.compute_lexical_similarity(claim, text)
+        return round(max(0.0, min(1.0, (semantic + lexical) / 2)), 2), engine
 
-    def find_best_matching_sentence(self, claim: str, abstract: str) -> Tuple[str, float]:
-        """Stage 1: Rationale Selection — finds the single abstract sentence with highest alignment."""
-        if not claim or not abstract:
-            return "", 0.0
+    def split_sentences(self, text: str) -> list[str]:
+        return [unit.text for unit in sentence_units(text)]
 
-        sentences = self.split_sentences(abstract)
-        if not sentences:
-            return abstract[:150], 0.0
+    def find_best_matching_sentence(self, claim: str, abstract: str) -> tuple[str, float]:
+        """Compatibility retrieval helper; its score is not a semantic verdict."""
+        ranked = [(unit.text, self._similarity(claim, unit.text)[0])
+                  for unit in sentence_units(abstract)] if claim else []
+        return max(ranked, key=lambda item: item[1]) if ranked else ("", 0.0)
 
-        best_sent = sentences[0]
-        best_score = 0.0
+    def assess(self, claim: str, evidence: str) -> ClaimAssessment:
+        return self.assess_passages(claim, [EvidencePassage(text=evidence, source_kind="PROVIDED_TEXT")])
 
-        for sent in sentences:
-            sem_score = self.semantic_matcher.compute_similarity(claim, sent)
-            lex_score = UniversalLexicalMatcher.compute_lexical_similarity(claim, sent)
-            score = 0.50 * sem_score + 0.50 * lex_score
-            if score > best_score:
-                best_score = score
-                best_sent = sent
+    def assess_passages(self, claim: str, passages: list[EvidencePassage]) -> ClaimAssessment:
+        candidates = []
+        for passage in passages:
+            for unit in clause_units(passage.text):
+                score, engine = self._similarity(claim, unit.text)
+                candidates.append(Candidate(unit.text, passage, score, engine, []))
+        if not claim.strip() or not candidates:
+            return ClaimAssessment(state="INSUFFICIENT_EVIDENCE", message="缺少断言或可用参考文本。")
+        candidates.sort(key=lambda item: item.score, reverse=True)
 
-        return best_sent, round(best_score, 2)
+        # Cross-language embeddings retrieve text, but these rules cannot verify
+        # that predicates, units and qualifiers translate faithfully.
+        same_language = [c for c in candidates if not different_languages(claim, c.text)]
+        if not same_language:
+            best = candidates[0]
+            best.findings = [finding("LANGUAGE_COMPARISON_UNAVAILABLE", "EVIDENCE",
+                                     "跨语言文字需要人工核对翻译；相似度不能代替逐项语义检查。", claim, best.text)]
+            return self._assessment("REVIEW_REQUIRED", best, best.attach_source(best.findings))
 
-    def evaluate_alignment(self, claim: str, abstract: str) -> Tuple[float, str, str, str, str]:
-        """Evaluates claim alignment against abstract using general-purpose sentence-level logic.
+        comparable = [c for c in same_language if c.score >= GuardrailConfig.CLAIM_RETRIEVAL_MIN_SCORE
+                      and not target_mismatch(claim, c.text)]
+        if not comparable:
+            best = same_language[0]
+            best.findings = [finding("TARGET_MISMATCH", "EVIDENCE",
+                                     "未找到主体与结果对应的片段；不能借用其他对象或指标的方向判断冲突。", claim, best.text)]
+            return self._assessment("INSUFFICIENT_EVIDENCE", best, best.attach_source(best.findings))
 
-        Returns: (final_score, reason, best_matching_sentence, alignment_state, alignment_engine)
-        """
-        if not claim or not abstract:
-            return 0.0, "缺少断言或参考文献摘要", "", "UNVERIFIED", "rule_lexical_fallback"
+        for candidate in comparable:
+            candidate.findings = candidate.attach_source(self._check_pair(claim, candidate.text))
 
-        best_sentence, sent_score = self.find_best_matching_sentence(claim, abstract)
-        sem_score, alignment_engine = self.semantic_matcher.compute_similarity_with_engine(claim, best_sentence)
+        best = comparable[0]
+        aligned = [c for c in comparable if not c.findings]
+        conflicts = [c for c in comparable if any(f.severity == "CONFLICT" for f in c.findings)]
+        disagreement = (aligned[0], conflicts[0]) if aligned and conflicts else None
+        if not disagreement and len(conflicts) > 1:
+            # Both fragments can differ from the claim and from each other.
+            for candidate in conflicts[1:]:
+                if any(f.severity == "CONFLICT" for f in self._check_pair(conflicts[0].text, candidate.text)):
+                    disagreement = (conflicts[0], candidate)
+                    break
+        if disagreement:
+            # Keep both quotes with their own coordinates. Similarity must not
+            # silently discard conflicting evidence.
+            findings = []
+            for candidate in disagreement:
+                item = finding("EVIDENCE_DISAGREEMENT", "EVIDENCE",
+                               "可比片段给出不同表述，请结合研究条件核对，未按最高相似度挑选结论。", claim, candidate.text)
+                findings.extend(candidate.attach_source([item]))
+            findings.extend(f for c in comparable for f in c.findings)
+            return self._assessment("REVIEW_REQUIRED", best, findings)
 
-        # 1. Syntactic Negation & Directional Antonym Inversion Check
-        if UniversalSyntacticNegationAnalyzer.check_negation_conflict(claim, best_sentence) or \
-           UniversalSyntacticNegationAnalyzer.check_negation_conflict(claim, abstract):
-            return GuardrailConfig.POLARITY_CONTRADICTION_SCORE, "显式极性矛盾：断言与文献核心句存在语法否定或方向相反逻辑 (Polarity Inversion)", best_sentence, "CONTRADICTED", alignment_engine
+        findings = [f for c in comparable for f in c.findings]
+        if conflicts:
+            best = conflicts[0]
+        state = ("POTENTIAL_CONFLICT" if conflicts else
+                 "REVIEW_REQUIRED" if findings else "TEXT_ALIGNED")
+        if compound_claim(claim):
+            findings.extend(best.attach_source([finding("COMPOUND_CLAIM", "EVIDENCE",
+                                    "断言包含多个结果或数量，请拆成单独论断逐项核对；一个匹配片段不能覆盖整句。", claim, best.text)]))
+            state = "REVIEW_REQUIRED"
+        return self._assessment(state, best, findings)
 
-        # 2. Dual-channel score computation against best matching sentence
-        lex_score = UniversalLexicalMatcher.compute_lexical_similarity(claim, best_sentence)
+    @staticmethod
+    def _check_pair(claim: str, evidence: str) -> list[SemanticFinding]:
+        scope = check_scope(claim, evidence)
+        uncertain = comparison_uncertain(claim, evidence)
+        first, second = relation(claim), relation(evidence)
+        if first and second:
+            known_directions = direction(first.predicate) and direction(second.predicate)
+            if not known_directions and predicate_key(first.predicate) != predicate_key(second.predicate):
+                uncertain = True
+        changed_conditions = bool(scope) or uncertain
+        polarity = check_polarity(claim, evidence)
+        values_c = [(q.value, q.dimension, q.qualifier) for q in quantities(claim)]
+        values_e = [(q.value, q.dimension, q.qualifier) for q in quantities(evidence)]
+        negated_quantity = (values_c or values_e) and values_c != values_e and (negated(claim) or negated(evidence))
+        findings = [*scope, *polarity, *check_numbers(claim, evidence, bool(changed_conditions or negated_quantity))]
+        if uncertain:
+            findings.append(finding("COMPARISON_UNCERTAIN", "EVIDENCE",
+                                    "主体、谓词、指标或修饰语尚未完整对应，词语重合不足以确认语义可比。", claim, evidence))
+        if negated_quantity:
+            findings.append(finding("NEGATED_QUANTITY", "NUMBER",
+                                    "数量命题带有否定且数值不同：不是某个数值不能解释为另一个数值的反证。", claim, evidence))
+        if changed_conditions or negated_quantity:
+            for item in findings:
+                item.severity = "REVIEW"
+        return findings
 
-        # Cross-lingual script handling: do not penalize semantic score if lexical overlap is 0 due to script differences
-        if sem_score >= 0.35 and lex_score < 0.10:
-            final_score = round(max(sem_score, sent_score), 2)
-        else:
-            final_score = round(max(0.50 * sem_score + 0.50 * lex_score, sent_score), 2)
+    @staticmethod
+    def _assessment(state: str, best: Candidate, findings: list[SemanticFinding]) -> ClaimAssessment:
+        messages = {
+            "TEXT_ALIGNED": "已检查的文字与限定相符，仍需核对研究设计和全文；这不是论断真实性证明。",
+            "POTENTIAL_CONFLICT": "发现可比文字中的具体差异，请根据证据原句复核。",
+            "REVIEW_REQUIRED": "语义限定或可比性尚未确认，需要人工复核。",
+            "INSUFFICIENT_EVIDENCE": "没有找到可用于这项论断的对应证据，不能据此判定论断为假。",
+        }
+        return ClaimAssessment(state=state, similarity_score=best.score, message=messages[state],
+                               evidence_text=best.text, evidence_location=locate_excerpt(best.passage, best.text),
+                               text_source=best.passage.source_kind, alignment_engine=best.engine,
+                               findings=findings)
 
-        if final_score >= GuardrailConfig.STRONG_ALIGNMENT_THRESHOLD:
-            reason = "正文断言与文献摘要呈现极高语义与词汇重合 (High Alignment)"
-            alignment_state = "SUPPORTED"
-        elif final_score >= GuardrailConfig.WEAK_ALIGNMENT_THRESHOLD:
-            reason = "正文断言与文献摘要呈现中度相关（仅背景或部分吻合）"
-            alignment_state = "PARTIAL"
-        else:
-            reason = "正文断言未在文献摘要中找到直接因果证据支持"
-            alignment_state = "NEUTRAL"
-
-        return final_score, reason, best_sentence, alignment_state, alignment_engine
+    def evaluate_alignment(self, claim: str, abstract: str) -> tuple[float, str, str, str, str]:
+        """Legacy tuple shape; states now use ClaimAssessment's review vocabulary."""
+        result = self.assess(claim, abstract)
+        reasons = " ".join(item.message for item in result.findings)
+        return (result.similarity_score, result.message + " " + reasons, result.evidence_text,
+                result.state, result.alignment_engine)
 
 
-# Backward-compatibility aliases
+class UniversalSyntacticNegationAnalyzer:
+    """Compatibility wrapper for old callers; no abstract-wide polarity scan."""
+
+    @staticmethod
+    def is_sentence_negated(sentence, shared_stems=None):
+        return negated(sentence)
+
+    @staticmethod
+    def check_negation_conflict(claim, text):
+        return any(not target_mismatch(claim, unit.text) and
+                   any(f.severity == "CONFLICT" for f in check_polarity(claim, unit.text))
+                   for unit in clause_units(text))
+
+
 MultilingualFeatureExtractor = UniversalLexicalMatcher
 NegationScopeDetector = UniversalSyntacticNegationAnalyzer
 SYNONYM_MAP = ACADEMIC_SYNONYMS
-OPPOSITE_PAIRS = DIRECTIONAL_ANTONYMS
