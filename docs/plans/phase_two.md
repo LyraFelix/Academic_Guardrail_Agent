@@ -40,7 +40,7 @@
 - [x] Service/entrypoint red tests: one lookup for repeated occurrences, independent results, distinct counts, warnings for unavailable content, and offline CLI/MCP document output. Preserve phase-one checks.
 - [x] Update Chinese reading guidance, format support boundaries, examples and validation notes. Include a small deterministic multi-occurrence demo.
 - [x] Run the complete suite, real MCP stdio smoke check and package build. Review the final diff; fix material findings, record evidence paths and focused commits.
-- [ ] Recheck the original repository for drift. Transfer only reviewed phase-two commits, validate the original checkout, record the research worklog and engineering findings. No remote push is requested.
+- [x] Recheck the original repository for drift. Transfer only reviewed phase-two commits, validate the original checkout, record the research worklog and engineering findings. No remote push is requested.
 
 ## Acceptance evidence
 
