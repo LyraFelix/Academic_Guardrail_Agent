@@ -49,13 +49,22 @@ Identity is resolved before retraction facts are assigned to a citation. An ambi
 
 ## MCP
 
+This project runs **one MCP server** that exposes four tools. The CLI is another interface to the same verification service.
+
+| Tool | Purpose |
+| --- | --- |
+| `verify_single_citation` | Check one reference's identity, metadata and retraction evidence |
+| `check_paper_retraction` | Query retraction evidence by DOI, reusing single-reference verification |
+| `audit_document_claims` | Audit a document, return findings and save an HTML report |
+| `generate_audit_html_report` | A convenience entry point whose main output is the HTML report |
+
 Configure an MCP client to launch the installed executable:
 
 ```json
 {"mcpServers": {"academic-guardrail": {"command": "academic-guardrail-mcp"}}}
 ```
 
-Tools: `verify_single_citation`, `check_paper_retraction`, `audit_document_claims`, `generate_audit_html_report`. All accept `offline: true`. Citation verification and document audit support `detail: compact | detailed | debug`. Other network tools used by the host agent remain outside this server's control.
+All tools accept `offline: true`. Citation verification and document audit support `detail: compact | detailed | debug`. Other network tools used by the host agent remain outside this server's control.
 
 ## Read and test
 

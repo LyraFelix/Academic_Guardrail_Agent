@@ -1,6 +1,6 @@
 # Phase-two validation record
 
-Date: 2026-11-01. Baseline: `5dae029b85a9135b7f96955cf6d7503cdfbca9c9` (phase one). Work was implemented in the isolated `codex/phase-two` branch. The original phase-one audit snapshot and remediation clone were preserved.
+Date: 2026-11-01. Baseline: `5dae029b85a9135b7f96955cf6d7503cdfbca9c9` (phase one). Work was implemented in an isolated development branch, now named `phase-two`. The original phase-one audit snapshot and remediation clone were preserved.
 
 ## Evidence scope
 
@@ -52,7 +52,7 @@ Reproduce the transport check with `python scripts/validate_phase_two.py --outpu
 
 ## Integration checkpoint
 
-Implementation commit: `a1077577855937693114f5704c58ecaa843bb5f4`. Before transfer, the original repository was verified clean at `5dae029`; it now uses `codex/phase-two`. The original `master` branch retains the phase-one commit. Only the reviewed branch was transferred from the local clone, with no remote push. The research workspace worklog records the final documentation checkpoint and evidence manifest.
+Implementation commit: `a1077577855937693114f5704c58ecaa843bb5f4`. Before transfer, the original repository was verified clean at `5dae029`. The reviewed branch was transferred from the local clone and validated from the original project path. The owner subsequently requested publication through the existing `master` branch. Git author and committer attribution remain Felix; branch names do not define authorship. The research workspace worklogs record the validation and publication checkpoints separately.
 
 ## Remaining limits
 

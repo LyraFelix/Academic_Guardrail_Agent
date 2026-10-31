@@ -58,6 +58,15 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 
 ## MCP 使用
 
+本项目实现的是 **一个 MCP Server**，向客户端注册下表中的四个工具。命令行是同一套核验逻辑的另一个入口。
+
+| 工具 | 用途 |
+| --- | --- |
+| `verify_single_citation` | 核验单条文献的身份、元数据和撤稿线索 |
+| `check_paper_retraction` | 用 DOI 查询撤稿证据，内部复用单条文献核验 |
+| `audit_document_claims` | 审核文档引用及正文，返回核查说明并保存 HTML 报告 |
+| `generate_audit_html_report` | 以生成 HTML 报告为主要输出的便捷入口 |
+
 MCP 客户端可以启动源码安装后生成的命令：
 
 ```json
@@ -70,7 +79,7 @@ MCP 客户端可以启动源码安装后生成的命令：
 }
 ```
 
-可用工具：`verify_single_citation`、`check_paper_retraction`、`audit_document_claims`、`generate_audit_html_report`。四个工具均支持 `offline: true`。文献核验和审计支持 `detail` 为 `compact`、`detailed`、`debug`。宿主 Agent 是否调用其他在线工具，由宿主配置控制。
+四个工具均支持 `offline: true`。文献核验和审计支持 `detail` 为 `compact`、`detailed`、`debug`。宿主 Agent 是否调用其他在线工具，由宿主配置控制。
 
 ## 学习与验证
 
