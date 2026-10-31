@@ -24,7 +24,7 @@ from typing import Optional
 from academic_guardrail.core.reporter import ReportGenerator
 from academic_guardrail.core.models import RiskLevel
 from academic_guardrail.core.service import AuditService
-from academic_guardrail.core.result_formatter import citation_from_text, format_result
+from academic_guardrail.core.result_formatter import citation_from_text, format_result, format_counts, format_diagnostic
 
 
 @click.group()
@@ -59,7 +59,9 @@ def audit(file_path: str, output: str, refs_dir: Optional[str], email: Optional[
             if report.total_citations == 0:
                 console.print("[yellow]ℹ️ 未能在文件中找到文献引用标记或 GB/T 7714 格式。[/yellow]")
 
-            console.print(f"[green]已提取到 {report.total_citations} 条文献引用与断言上下文，已完成引用核验与可用文本的启发式比对。[/green]\n")
+            console.print(format_counts(report), markup=False)
+            for diagnostic in report.parse_diagnostics:
+                console.print(format_diagnostic(diagnostic), markup=False, highlight=False)
             results = report.results
 
             # Display rich terminal table
@@ -72,14 +74,14 @@ def audit(file_path: str, output: str, refs_dir: Optional[str], email: Optional[
             for r in results:
                 risk_color = "green" if r.risk_level == RiskLevel.PASS else ("blue" if r.risk_level == RiskLevel.NOTICE else ("yellow" if r.risk_level == RiskLevel.WARNING else "red"))
                 table.add_row(
-                    Text(r.citation.id),
+                    Text(f"{r.citation.id} / {r.claim.occurrence_id}" if r.claim else r.citation.id),
                     Text(r.citation.raw_text[:40] + "..."),
                     f"[{risk_color}]{r.risk_level.value}[/{risk_color}]",
                     Text(format_result(r))
                 )
 
             console.print(table)
-            console.print(f"\n[bold]审计汇总[/bold]: 总引用: {report.total_citations} | [green]🟢 本次检查通过: {report.passed_count}[/green] | [blue]🔵 提示: {report.notice_count}[/blue] | [yellow]🟡 警告: {report.warning_count}[/yellow] | [red]🔴 高危: {report.danger_count}[/red]")
+            console.print(f"\n[bold]结果等级汇总[/bold]: 结果条数: {report.total_citations} | [green]🟢 本次检查通过: {report.passed_count}[/green] | [blue]🔵 提示: {report.notice_count}[/blue] | [yellow]🟡 警告: {report.warning_count}[/yellow] | [red]🔴 高危: {report.danger_count}[/red]")
 
             if output:
                 generator = ReportGenerator()

@@ -6,6 +6,7 @@ import re
 from urllib.parse import quote
 
 from academic_guardrail.core.models import DocumentAuditReport, RiskLevel
+from academic_guardrail.core.result_formatter import format_counts, format_diagnostic, format_location
 
 SCOPE = (
     "PASS 表示本次元数据核查或启发式检查未触发风险，不代表论文或断言的科学正确性。"
@@ -37,7 +38,7 @@ header,.controls { display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
 header { justify-content:space-between; } label { display:flex; gap:8px; align-items:center; }
 input { width:min(330px,65vw); } .muted,footer { color:var(--muted); }
 .scope,.empty { border:1px solid var(--line); border-radius:8px; padding:16px; }
-.summary { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin:24px 0; }
+.summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin:24px 0; }
 .summary div,.citation-card { background:var(--panel); border:1px solid var(--line);
   border-radius:8px; padding:16px; }
 .summary strong { display:block; font-size:1.6rem; }
@@ -131,11 +132,14 @@ class ReportGenerator:
         lines = ["# 🛡️ 学术论文引用与断言审查报告 (Academic Guardrail Report)",
                  f"**审计文件**: {_markdown(ntpath.basename(report.document_path))}",
                  f"**核查模式**: {'离线' if getattr(report, 'offline', False) else '在线（以实际来源为准）'}",
-                 f"**引用总数**: {report.total_citations} | PASS: {report.passed_count} | "
+                 f"**核查计数**: {_markdown(format_counts(report))}",
+                 f"**结果等级**: PASS: {report.passed_count} | "
                  f"NOTICE: {report.notice_count} | WARNING: {report.warning_count} | DANGER: {report.danger_count}",
                  "", SCOPE, ""]
         if not report.results:
             lines.append(EMPTY)
+        for diagnostic in report.parse_diagnostics:
+            lines.append(f"- **解析 / 文件提示**: {_markdown(format_diagnostic(diagnostic))}")
         for result in report.results:
             title = result.verified_title or result.citation.title or result.citation.raw_text
             lines.extend([f"## {_markdown(result.citation.id)} · {_markdown(title)}",
@@ -146,15 +150,20 @@ class ReportGenerator:
                           f"- **撤稿检查**: {_markdown(_retraction(result))}",
                           f"- **说明**: {_markdown(result.message)}"])
             if result.claim:
+                lines.append(f"- **引用位置**: {_markdown(result.claim.occurrence_id)} · {_markdown(format_location(result.claim.location))}")
                 lines.append(f"- **正文断言**: {_markdown(result.claim.claim_sentence)}")
             if result.retraction_info:
                 lines.append(f"- **撤稿说明**: {_markdown(result.retraction_info)}")
             lines.append(f"- **核查范围**: {_markdown(result.verification_scope)}")
             lines.append(f"- **证据状态**: {_markdown(result.evidence_status)}")
+            lines.append(f"- **文本检索**: {_markdown(result.retrieval_status)}")
             if result.failure_reason:
                 lines.append(f"- **查询异常**: {_markdown(result.failure_reason)}")
-            if result.evidence_text or result.abstract_tldr:
-                lines.append(f"- **证据片段 / 摘要**: {_markdown(result.evidence_text or result.abstract_tldr)}")
+            if result.evidence_text:
+                lines.append(f"- **证据片段**: {_markdown(result.evidence_text)}")
+                lines.append(f"- **文本来源**: {_markdown(result.text_source)} · {_markdown(format_location(result.evidence_location))}")
+            if result.abstract_tldr and result.abstract_tldr != result.evidence_text:
+                lines.append(f"- **文献摘要（背景信息）**: {_markdown(result.abstract_tldr)}")
             for source in getattr(result, "sources", []) or []:
                 lines.append(f"- **来源**: {_markdown(_source_text(source))}")
             lines.append("")
@@ -163,12 +172,13 @@ class ReportGenerator:
     def _card(self, result):
         title = result.verified_title or result.citation.title or result.citation.raw_text
         risk = result.risk_level.name.lower()
-        fields = [("原始引用", result.citation.raw_text), ("位置", result.citation.location_info),
+        fields = [("原始引用", result.citation.raw_text), ("条目位置", result.citation.location_info),
                   ("核查状态", result.status), ("撤稿检查", _retraction(result)), ("说明", result.message)]
         for label, attribute in (("证据状态", "evidence_status"), ("失败原因", "failure_reason"),
                                  ("撤稿说明", "retraction_info"), ("核查范围", "verification_scope"),
                                  ("元数据匹配分数", "reference_confidence"), ("断言对齐分数", "claim_alignment_score"),
-                                 ("对齐状态", "alignment_state"), ("对齐引擎", "alignment_engine"), ("语义模式", "semantic_mode")):
+                                 ("对齐状态", "alignment_state"), ("对齐引擎", "alignment_engine"), ("语义模式", "semantic_mode"),
+                                 ("文本检索", "retrieval_status"), ("文本来源", "text_source")):
             value = getattr(result, attribute, None)
             if value is not None:
                 fields.append((label, value))
@@ -178,10 +188,14 @@ class ReportGenerator:
                  f"<h3>[{_escape(result.citation.id)}] {_escape(title)}</h3>",
                  f"<dl>{details}<dt>DOI / 标识符</dt><dd>{_doi_html(result.verified_doi or result.citation.doi)}</dd></dl>"]
         if result.claim:
+            parts.append(f"<p>引用位置：{_escape(result.claim.occurrence_id)} · {_escape(format_location(result.claim.location))}</p>")
             parts.append(f"<h4>正文断言</h4><blockquote>{_escape(result.claim.claim_sentence)}</blockquote>")
-        evidence = result.evidence_text or result.abstract_tldr
+        evidence = result.evidence_text
         if evidence:
-            parts.append(f"<h4>证据片段 / 摘要 · {_escape(result.evidence_granularity)}</h4><blockquote>{_escape(evidence)}</blockquote>")
+            parts.append(f"<h4>证据片段 · {_escape(result.evidence_granularity)}</h4><blockquote>{_escape(evidence)}</blockquote>")
+            parts.append(f"<p>证据位置：{_escape(format_location(result.evidence_location))}</p>")
+        if result.abstract_tldr and result.abstract_tldr != evidence:
+            parts.append(f"<details><summary>文献摘要（背景信息）</summary><blockquote>{_escape(result.abstract_tldr)}</blockquote></details>")
         sources = getattr(result, "sources", []) or []
         parts.append("<h4>核查来源</h4><ul>" + ("".join(f"<li>{_escape(_source_text(source))}</li>" for source in sources)
                      or "<li>没有记录来源；不能据此补充核查结论。</li>") + "</ul>")
@@ -197,12 +211,17 @@ class ReportGenerator:
     def generate_html(self, report: DocumentAuditReport) -> str:
         name = _escape(ntpath.basename(report.document_path))
         mode = "离线：仅使用本地数据，未执行在线检索或语义模型加载。" if getattr(report, "offline", False) else "在线核查：实际查询结果与可用性请查看每条引用的来源和状态。"
-        counts = [("引用总数", report.total_citations), ("PASS", report.passed_count),
+        counts = [("文献条目", report.total_references), ("正文引用次数", report.total_occurrences),
+                  ("核查结果", report.total_citations), ("PASS", report.passed_count),
                   ("NOTICE", report.notice_count), ("WARNING", report.warning_count), ("DANGER", report.danger_count)]
         summary = "".join(f"<div>{label}<strong>{_escape(count)}</strong></div>" for label, count in counts)
         options = '<option value="all">全部风险</option>' + "".join(f'<option value="{risk.name.lower()}">{risk.value}</option>' for risk in RiskLevel)
         cards = "\n".join(self._card(result) for result in report.results)
         empty = f'<p class="empty">{EMPTY}</p>' if not report.results else ""
+        diagnostics = ""
+        if report.parse_diagnostics:
+            diagnostics = "<section class='scope'><h2>解析 / 文件提示</h2><ul>" + "".join(
+                f"<li>{_escape(format_diagnostic(item))}</li>" for item in report.parse_diagnostics) + "</ul></section>"
         return f'''<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -212,6 +231,7 @@ class ReportGenerator:
 <button type="button" id="theme-toggle" aria-pressed="false">深色模式</button></header>
 <p class="muted">{mode}</p><p class="scope">{SCOPE}</p>
 <section class="summary" aria-label="核查计数">{summary}</section>
+<p class="muted">{_escape(format_counts(report))}</p>{diagnostics}
 <h2>引用核查明细</h2><div class="controls">
 <label for="risk-filter">风险筛选 <select id="risk-filter">{options}</select></label>
 <label for="search">搜索 <input id="search" type="search" placeholder="标题、DOI、断言或来源"></label>

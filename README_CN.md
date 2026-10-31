@@ -48,7 +48,9 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 | `evidence_status` | 匹配到在线文章、本地文件、歧义、查询失败等原因 |
 | `retraction_status` | `CONFIRMED` / `SUSPECTED` / `NO_RECORD` / `NOT_CHECKED` |
 | `sources` | 数据源、证据类型、标识符、说明及来源自身的撤稿标记 |
-| `verification_scope` | `REFERENCE_METADATA` 或 `HEURISTIC_ALIGNMENT` |
+| `verification_scope` | `REFERENCE_METADATA`、`TEXT_RETRIEVAL` 或 `HEURISTIC_ALIGNMENT` |
+| `retrieval_status` | 文本可用、无文本、低相关性或本地歧义；与文献身份状态分开 |
+| `text_source` / `evidence_location` | 在线摘要、本地摘要或全文；本地摘录保留文件、页码（适用时）和字符位置 |
 
 先确认文献身份，再归属撤稿证据。歧义候选即使带撤稿标记，也不能直接说用户引用的是撤稿论文。标题中出现 “retraction” 只作为疑似线索；同 DOI 的明确撤稿证据不会被另一来源的否定标记覆盖。
 
@@ -74,6 +76,14 @@ MCP 客户端可以启动源码安装后生成的命令：
 
 推荐先读 [第一阶段代码导读](docs/learning_guide.md)，按“数据模型 → 纯判定函数 → 服务层 → 接口”顺序阅读，再运行相应回归测试。
 
+[第二阶段代码导读](docs/phase_two_guide.md) 解释文献条目与每处正文引用的区别、全文证据位置以及格式支持范围。可运行合成样例：
+
+```powershell
+academic-guardrail audit docs/examples/phase_two_manuscript.md --refs-dir docs/examples/phase_two_refs --offline -o phase_two_report.html
+```
+
+样例有 1 个文献条目、3 次正文引用；其中 `[2]` 缺少条目，会显示解析提示。报告的风险计数按结果行统计，不等于不同论文的数量。
+
 ```powershell
 python -m pytest tests -q
 ```
@@ -84,7 +94,7 @@ python -m pytest tests -q
 
 ## 当前局限
 
-- 解析器只覆盖部分引用格式；PDF 排版、BibTeX/LaTeX 关联和同一文献多次引用仍可能丢失信息。
+- 解析器覆盖常见编号引用、重复/分组引用、字面量 BibTeX 和常见 LaTeX 关联；不执行任意宏，不支持所有作者年份制格式。Word 覆盖正文和表格；PDF 不做 OCR，复杂排版仍可能丢失或错序。
 - 本地标题、作者、年份来自简易抽取；匹配分数不是校准后的概率，歧义时需要补全信息。
 - 词面规则和嵌入相似度不能可靠判断数值、因果、限定条件或真实蕴含。
 - 在线来源可能缺摘要、延迟索引或不可用；撤稿数据库也可能不完整或过期。

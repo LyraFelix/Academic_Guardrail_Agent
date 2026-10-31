@@ -1,8 +1,8 @@
 """Data models for academic citations, claims, and verification results."""
 
 from enum import Enum
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any, Literal
+from pydantic import BaseModel, Field, model_validator
 
 
 class RiskLevel(str, Enum):
@@ -21,6 +21,7 @@ class VerificationStatus(str, Enum):
 
 
 class EvidenceStatus(str, Enum):
+    PARSE_INCOMPLETE = "PARSE_INCOMPLETE"
     AMBIGUOUS = "AMBIGUOUS"
     LOCAL_MATCHED = "LOCAL_MATCHED"
     RETRACTED = "RETRACTED"
@@ -52,6 +53,28 @@ class EvidenceSource(BaseModel):
     is_retracted: Optional[bool] = None
 
 
+class SourceLocation(BaseModel):
+    """Offsets are zero-based [start, end) in extracted text, never PDF bytes."""
+
+    file_path: str
+    page: Optional[int] = None  # One-based physical PDF page, including blank pages.
+    line: Optional[int] = None  # One-based line in extracted text.
+    char_start: int
+    char_end: int
+
+
+class ParseDiagnostic(BaseModel):
+    code: str
+    message: str
+    location: Optional[SourceLocation] = None
+
+
+class EvidencePassage(BaseModel):
+    text: str
+    source_kind: str  # LOCAL_FULLTEXT or ONLINE_ABSTRACT
+    location: Optional[SourceLocation] = None
+
+
 class Citation(BaseModel):
     id: str                               # 唯一识别符 e.g. "cit_1"
     raw_text: str                         # 引用的原始文本
@@ -61,12 +84,23 @@ class Citation(BaseModel):
     year: Optional[int] = None            # 发表年份
     venue: Optional[str] = None           # 发表期刊/会议名称
     location_info: Optional[str] = None   # 在原文档中的位置 e.g. "Page 3, Paragraph 2"
+    location: Optional[SourceLocation] = None
+    parse_status: Literal["PARSED", "MISSING", "AMBIGUOUS"] = "PARSED"
 
 
 class ContextClaim(BaseModel):
     citation_id: str                      # 关联的 Citation ID
     claim_sentence: str                   # 包含引用的正文断言句
     surrounding_context: str              # 上下文背景 (前后 1-2 句)
+    occurrence_id: Optional[str] = None
+    marker: Optional[str] = None
+    location: Optional[SourceLocation] = None
+
+
+class ParsedDocument(BaseModel):
+    citations: List[Citation] = Field(default_factory=list)
+    occurrences: List[ContextClaim] = Field(default_factory=list)
+    diagnostics: List[ParseDiagnostic] = Field(default_factory=list)
 
 
 class VerificationResult(BaseModel):
@@ -85,6 +119,9 @@ class VerificationResult(BaseModel):
     abstract_tldr: Optional[str] = None
     evidence_text: Optional[str] = None                # 精准提炼的证据片段
     evidence_granularity: Optional[str] = None         # "SENTENCE" | "CLAUSE" | "EXPANDED_WINDOW"
+    evidence_location: Optional[SourceLocation] = None
+    text_source: Optional[str] = None
+    retrieval_status: Literal["NOT_REQUESTED", "AVAILABLE", "NO_TEXT", "NO_RELEVANT_PASSAGE", "AMBIGUOUS"] = "NOT_REQUESTED"
     semantic_mode: Optional[str] = None                # "CORE" | "FULL" | "CORE_FALLBACK"
     reference_confidence: Optional[float] = None  # 0.0 ~ 1.0 文献元数据匹配置信度
     claim_alignment_score: Optional[float] = None  # 0.0 ~ 1.0 语义对齐得分
@@ -103,12 +140,24 @@ class VerificationResult(BaseModel):
 class DocumentAuditReport(BaseModel):
     document_path: str
     offline: bool = False
-    total_citations: int
+    total_citations: int  # Compatibility: result rows, not unique references.
+    total_references: Optional[int] = None
+    total_occurrences: Optional[int] = None
+    parse_diagnostics: List[ParseDiagnostic] = Field(default_factory=list)
     passed_count: int
     notice_count: int = 0
     warning_count: int
     danger_count: int
     results: List[VerificationResult]
+
+    @model_validator(mode="after")
+    def infer_legacy_counts(self):
+        """Old callers can omit the new counts; do not display invented zeros."""
+        if self.total_references is None:
+            self.total_references = len({r.citation.id for r in self.results if r.citation.parse_status != "MISSING"})
+        if self.total_occurrences is None:
+            self.total_occurrences = sum(r.claim is not None for r in self.results)
+        return self
 
 
 class PaperRecord(BaseModel):
@@ -119,3 +168,7 @@ class PaperRecord(BaseModel):
     year: Optional[int] = None            # 发表年份
     abstract: str = ""                    # 自动提取到的 Abstract / 摘要
     fulltext: str = ""                    # 提取到的原文全文本
+    doi: Optional[str] = None
+    doi_candidates: List[str] = Field(default_factory=list)
+    abstract_location: Optional[SourceLocation] = None
+    passages: List[EvidencePassage] = Field(default_factory=list)

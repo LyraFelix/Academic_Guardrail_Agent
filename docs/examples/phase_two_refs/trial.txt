@@ -1,0 +1,15 @@
+A randomized clinical treatment trial
+Alice Smith
+2024
+doi: 10.1234/guardrail-demo
+
+Abstract: A synthetic example for exercising document retrieval.
+
+1. Methods
+This is a software fixture and does not describe a real clinical experiment.
+
+2. Results
+Treatment improves survival in the trial population.
+
+3. Limitations
+The text is synthetic and provides no scientific or medical evidence.

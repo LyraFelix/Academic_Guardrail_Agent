@@ -73,7 +73,7 @@ def _save_html(report, file_path: str, output_path: str) -> str:
 async def audit_document_claims(file_path: str, refs_dir: str = "", detail: str = "compact",
                                 output_html_path: str = "", offline: bool = False) -> str:
     """抽取引用，核验元数据和撤稿线索，执行启发式文本比对并输出离线 HTML。"""
-    from academic_guardrail.core.result_formatter import format_result
+    from academic_guardrail.core.result_formatter import format_result, format_counts, format_diagnostic
     service = _get_service(offline=offline)
     try:
         report = await service.audit_document(file_path, refs_dir=refs_dir or None)
@@ -83,10 +83,11 @@ async def audit_document_claims(file_path: str, refs_dir: str = "", detail: str 
     lines = [
         f"学术引用审查: {report.document_path} (Payload Detail: {detail.upper()})",
         f"HTML 报告: {saved}",
-        f"模式: {'离线' if report.offline else '在线'}；总引用: {report.total_citations}；"
+        f"模式: {'离线' if report.offline else '在线'}；{format_counts(report)}；"
         f"通过: {report.passed_count}；提示: {report.notice_count}；警告: {report.warning_count}；高危: {report.danger_count}",
         "零引用意味着未识别到可核验条目；文本相似度不等于事实支持。",
     ]
+    lines.extend(format_diagnostic(item) for item in report.parse_diagnostics)
     lines.extend(format_result(item, detail) for item in report.results)
     return "\n\n".join(lines)
 
@@ -102,7 +103,8 @@ async def generate_audit_html_report(file_path: str, output_path: str = "", refs
     finally:
         await service.close()
     saved = _save_html(report, file_path, output_path)
-    return f"HTML 审查报告: {saved}\n包含引用: {report.total_citations} 项。"
+    from academic_guardrail.core.result_formatter import format_counts, format_diagnostic
+    return f"HTML 审查报告: {saved}\n{format_counts(report)}\n" + "\n".join(format_diagnostic(item) for item in report.parse_diagnostics)
 
 
 def main():

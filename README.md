@@ -61,6 +61,14 @@ Tools: `verify_single_citation`, `check_paper_retraction`, `audit_document_claim
 
 See the [Chinese code reading guide](docs/learning_guide.md) and [phase-one design](docs/plans/phase_one.md).
 
+The [phase-two guide](docs/phase_two_guide.md) explains separate bibliography entries and body occurrences, source coordinates, and format boundaries. Repeated citations share one metadata lookup but retain separate results. Reports distinguish reference counts, occurrence counts (one per cited key), result rows, parsing diagnostics and text retrieval status.
+
+```bash
+academic-guardrail audit docs/examples/phase_two_manuscript.md --refs-dir docs/examples/phase_two_refs --offline -o phase_two_report.html
+```
+
+This synthetic fixture has one bibliography entry and three occurrences, including an unresolved `[2]`. Local evidence is retrieved from body passages with file/page/character positions. Abstract and full-text sources remain explicit.
+
 ```bash
 python -m pytest tests -q
 ```
@@ -71,4 +79,4 @@ Historical scripts and data remain in `benchmarks/` for later reconstruction. Hi
 
 ## Limitations
 
-Citation parsing is incomplete, especially PDF layouts, BibTeX/LaTeX associations and repeated occurrences. Local metadata extraction is heuristic. Matching scores are not calibrated probabilities. Lexical/embedding similarity does not reliably handle numerical, causal or scope differences. Online and local retraction coverage may be incomplete or stale. Human review remains necessary.
+Parsing covers common numbered references, repeated/grouped citations, literal BibTeX fields and common LaTeX citation commands. It does not expand arbitrary TeX macros, cover every author-year style or perform OCR. DOCX extraction covers body paragraphs and tables; complex PDF layout and cross-page sentence order remain limited. Local metadata extraction is heuristic. Matching scores are not calibrated probabilities. Lexical/embedding similarity does not reliably handle numerical, causal or scope differences. Online and local retraction coverage may be incomplete or stale. Human review remains necessary.

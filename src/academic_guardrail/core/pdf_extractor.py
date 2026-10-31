@@ -33,31 +33,17 @@ class PDFTextExtractor:
     """
 
     @staticmethod
-    def extract(file_path: str) -> str:
-        """Extracts full text from a PDF file, page-by-page.
-
-        Returns the concatenated text string, or raises RuntimeError if
-        pypdf is not installed.
-
-        Args:
-            file_path: Absolute or relative path to the PDF file.
-
-        Returns:
-            Multi-page text as a single string with page separators.
-
-        Raises:
-            RuntimeError: If pypdf is not installed.
-            Exception: Propagated from pypdf on parse failure.
-        """
+    def extract_pages(file_path: str) -> List[str]:
+        """Keep every physical page, including pages with no extractable text."""
         if not _HAS_PYPDF:
             raise RuntimeError(
                 "pypdf is required for PDF parsing. "
                 "Install it with: pip install pypdf"
             )
-        pages: List[str] = []
         reader = pypdf.PdfReader(file_path)
-        for idx, page in enumerate(reader.pages):
-            page_text = page.extract_text()
-            if page_text:
-                pages.append(f"--- Page {idx + 1} ---\n" + page_text)
-        return "\n".join(pages)
+        return [page.extract_text() or "" for page in reader.pages]
+
+    @staticmethod
+    def extract(file_path: str) -> str:
+        """Compatibility view. Page labels must never pollute paper metadata."""
+        return "\n\n".join(PDFTextExtractor.extract_pages(file_path))
