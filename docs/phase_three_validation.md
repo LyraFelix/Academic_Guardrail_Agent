@@ -16,6 +16,7 @@
 | 验证 | 观察结果 |
 | --- | --- |
 | 完整回归 | **264 passed**，17.94 秒；比基线增加 92 项 |
+| 原项目路径回归 | **264 passed**，19.31 秒；合并后从 `D:/Github_Project/Academic_Guardrail_Agent` 执行 |
 | 合成样例重放 | 50 个输入保存逐条命名结果；用于开发与回归，不是独立留出集 |
 | 实际 CLI | 审计演示文件，退出码 0，HTML 展示四类规则代码 |
 | 实际 MCP stdio | 一个服务列出并成功调用四个工具，保留原始输出 |
@@ -24,13 +25,20 @@
 | 离线边界 | Provider 构造、HTTP send、模型初始化的禁止访问计数均为 0 |
 | HTML 静态检查 | 不含外部活动资源；未依赖 CDN |
 | 独立代码复核 | 20 个原始反例复测后不再出现旧错误；追加时间边界回归通过 |
-| Wheel | 无网络、无新增依赖构建成功，85,069 字节 |
+| 最终独立复核 | 时间前后缀、中文时间、主体词与坐标复核通过；40 项边界/数据流测试通过 |
+| Wheel | 原项目路径无网络、无新增依赖构建成功，85,064 字节 |
 
-Wheel SHA-256：`0b51a6617984de9b1e9c92013180384a1d97bc2481b1c8a73303027abeaefbdb`。首次 pip 构建被 Windows 沙箱临时目录写权限阻断；在正常权限下用相同离线参数重跑成功。
+原项目最终 Wheel SHA-256：`2962d314ff8ec2d8abc37bd4fc2ede74741a1956ceeaa4a4e5cd8cb6ba0000cc`。首次 pip 构建被 Windows 沙箱临时目录写权限阻断；在正常权限下用相同离线参数重跑成功。较早的隔离副本 wheel 也保留，最后一次提交仅清理了检索模块末尾空行，因此两个构建的字节哈希不同。
 
 测试命令为 `python -X utf8 -m pytest tests -q -p pytest_asyncio.plugin`（本机另设置隔离 PYTHONPATH、关闭自动插件加载并保存 JUnit XML）。入口验收为 `python -X utf8 scripts/validate_phase_three.py --output-dir <new-directory>`；构建为 `python -m pip wheel . --no-index --no-deps --no-build-isolation --wheel-dir <output>`。
 
 完整本地证据根目录：`D:/Internship/Academic code/audit_guardrail_20261101_phase_three/`。关键文件是 `baseline.xml`、`baseline_semantic_outputs.json`、`semantic_red.xml`、`flow_red.xml`、`edge_red.xml`、`reviewer_probe.json`、`reviewer_recheck.json`、`final_suite.xml`、`entrypoints_second/validation.json`、`entrypoints_second/report.html` 与 `wheel_build.log`。验收 manifest 保存源文件和输入文件的 SHA-256。运行产物留在本地，不提交为项目研究结果。
+
+合并后的再次验收保存在 `original_suite.xml`、`entrypoints_original/`、`wheel_original/` 和 `wheel_original_build.log`；原路径的 CLI/MCP 验证重复得到同一演示计数及零离线越界访问。最终独立复核见 `reviewer_final_tests.xml`。
+
+## 合并与发布
+
+实现提交为 `874583e560dd0ff7eb9a690c9903321ac1812238`，作者和提交者均为 Felix，无工具协作者署名。使用普通 `phase-three` 分支，确认本地与远端仍在基线后，快进合并到原项目 `master`。原路径复测通过后正常推送，`git ls-remote` 已确认实现提交到达远端；没有 force push 或历史改写。本记录随后单独补齐最终验收结果。
 
 ## 兼容性与证据边界
 

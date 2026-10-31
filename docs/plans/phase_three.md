@@ -41,6 +41,6 @@ Three routes were considered: keep patching similarity thresholds, add an opaque
 - [x] Integrate across all entrypoints and preserve local evidence coordinates. Migrate old tests that explicitly required misleading support/contradiction semantics, with explanations.
 - [x] Add Chinese reading guidance, a deterministic replay script and examples covering each category. Separate similarity scores, rule findings and unverified scientific claims.
 - [x] Run focused and complete tests, actual offline MCP stdio validation and wheel build. Request independent code review and reproduce/fix material findings.
-- [ ] Record scope, commands, evidence, commits and limitations in the research workspace worklog. Recheck original and remote state, integrate tested commits and push normally without rewriting history.
+- [x] Record scope, commands, evidence, commits and limitations in the research workspace worklog. Recheck original and remote state, integrate tested commits and push normally without rewriting history.
 
 Evidence root: `D:/Internship/Academic code/audit_guardrail_20261101_phase_three/`. Original repository baseline: `d4f86981c2982aa1afa530f372c70388c9bd949d`. Isolated branch: `phase-three` in `guardrail_phase_three`.
