@@ -84,7 +84,9 @@ MCP 的 19 条 NEI 中有 9 条官方标签是 SUPPORT 或 CONTRADICT，不能�
 
 冻结运行版本全套测试 **376 passed**：工作副本 24.49 s，原路径 26.94 s。原路径实际 MCP 保留 7 个工具，既有分页/撤稿优先级及四类非法调用检查通过，服务器外部访问尝试为零。另有 13 次合成模型判断检查连接与流程，不计入上述 30 条效果结果。
 
-后续 v2 共同契约说明/schema 描述及来源显示名修正后，工作副本全量 **376 passed，21.09 s**（`final_v2_release_suite.xml`）。这次测试没有调用模型或重新计入任何效果样本。
+后续 v2 共同契约说明/schema 描述及来源显示名修正后，工作副本全量 **376 passed，21.09 s**，原路径 **376 passed，23.34 s**（`final_v2_release_suite.xml`、`original_final_suite.xml`）。原路径实际 MCP 再次通过相同 7 工具/4 类拒绝/离线边界检查。这次测试没有调用模型或重新计入任何效果样本。
+
+从 `c000433` 原路径离线构建的 wheel 为 96,421 bytes，SHA-256 `b3b95ebbf90981c75abe3508ed65c14af2e51395ac1056ec7241af99eaa64c39`，已核对新字段和语义说明模块包含在包内；完整工程回执为 `final_engineering_verification.json`。后续提交仅补充这段验收记录。
 
 证据根目录：`D:/Internship/Academic code/audit_guardrail_20261101_contradiction_comparison/`。原始输入、gold、运行输出及失败审查尝试保留本地，未提交到仓库。
 
