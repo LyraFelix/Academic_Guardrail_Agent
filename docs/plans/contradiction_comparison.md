@@ -74,3 +74,12 @@ even if other details are unreported. Preserve legacy submissions without findin
 
 Model conclusions may be unchanged or worse. The result must still state what was
 measured, what the workflow checks mechanically, and what remains unproven.
+
+## Post-run contract clarification
+
+The completed v1 run is preserved at code `adeaa9a`: 90 judgments are frozen before
+gold. A post-run audit found that the short direct prompt did not explain every
+custom cross-field storage rule, particularly quoted IDs for all findings. The
+current v2 preparation puts the complete contract in common instructions/schema
+for all arms. This is a future fairness/readability fix, not a new measured gain;
+there are no v2 model results. Raw v1 scores and all rejected outputs remain intact.

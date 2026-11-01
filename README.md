@@ -100,6 +100,8 @@ The [semantic coverage follow-up](docs/semantic_coverage_results.md) reports the
 
 The [expanded client evaluation](docs/client_evaluation_results.md) adds 60 public-train cases in separate discovery/validation partitions and explicitly records the interactive Codex client. It reports remaining errors rather than claiming a verified accuracy gain. Optional source-linked revision suggestions help draft narrower statements without changing the original claim's verdict.
 
+The latest [same-evidence comparison](docs/paired_review_results.md) uses 30 new cases and 90 independent Codex CLI judgments, requesting `gpt-6.1-sol` with high reasoning. Direct / guided direct / MCP agree with the official labels on 22/30, 21/30 and 21/30 cases; contradiction recall is 9/10, 8/10 and 8/10. This small experiment does **not** demonstrate a semantic gain from MCP. The [reading and reproduction guide](docs/paired_review_guide.md) explains optional claim-part findings, the three controls and preserved raw evidence. The subsequent v2 protocol clarifies a common storage contract; its model performance is unmeasured.
+
 The [phase-three guide](docs/phase_three_guide.md) explains the separate numeric, negation, causal and scope rules. Each finding retains its triggering evidence. Run the synthetic four-category example or replay the real offline CLI/MCP interfaces:
 
 ```bash

@@ -115,6 +115,8 @@ python -m pytest tests -q
 
 [扩大样本后的实测](docs/client_evaluation_results.md) 新增 60 条公开 train 样本，分开发现组和后续验证组，并明确由当前 Codex 助手判断。结果保留错误，没有证明语义准确率提升；新增可引用的改写建议帮助缩小表述范围，原论断结论仍单独计分。
 
+最新[同证据直接模型对照](docs/paired_review_results.md) 使用 30 条新样本、90 次独立 Codex CLI 判断，请求 `gpt-6.1-sol`、推理 `high`。直接模型 / 加语义提示 / 加 MCP 的标签一致率分别为 22/30、21/30、21/30，反驳召回分别为 9/10、8/10、8/10。**这批小样本没有证明 MCP 带来语义增益。** [阅读与复现导读](docs/paired_review_guide.md) 说明可选的论断分项分析、三组对照和原始证据保存。后续 v2 仅补全三组共同的记录规则，尚未测量模型效果。
+
 [第三阶段代码导读](docs/phase_three_guide.md) 解释数字、否定、因果、范围规则及其人工复核边界。四类问题的合成演示与实际入口验收：
 
 ```powershell

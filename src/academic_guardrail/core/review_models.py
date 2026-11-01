@@ -56,7 +56,7 @@ class ClaimFinding(ReviewModel):
     """The client's reading of one necessary claim part, never a server verdict."""
     claim_part: str = Field(min_length=1, max_length=3000, description="Exact substring of the original claim")
     relation: Literal["SUPPORTS", "CONTRADICTS", "NOT_ADDRESSED", "UNCLEAR"]
-    evidence_ids: list[str]
+    evidence_ids: list[str] = Field(description="Distinct reviewed IDs, each with a matching exact quote in judgment.quotes")
     reason: str = Field(min_length=1, max_length=3000)
 
 

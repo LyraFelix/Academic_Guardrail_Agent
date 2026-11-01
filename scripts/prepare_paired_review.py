@@ -13,7 +13,7 @@ from pathlib import Path
 import tarfile
 
 from academic_guardrail.core.review_models import ClientJudgment
-from benchmarks.client_comparison import ARMS, make_prompt, shared_evidence
+from benchmarks.client_comparison import ARMS, COMPARISON_PROTOCOL, make_prompt, shared_evidence
 from benchmarks.datasets import SCIFACT_SOURCE, _archive_records, _raw_index, _write_dataset, sha256, unique_by_id, write_json
 from benchmarks.runner import _code_record
 from benchmarks.schema import GoldCase, InputCase
@@ -52,7 +52,8 @@ def prepare_dataset(archive_path, exclusion_paths, destination, per_class):
     destination.mkdir(parents=True, exist_ok=False)
     for index, data in enumerate(snapshots):
         (destination / f"exclusions_{index + 1}.jsonl").write_bytes(data)
-    source = {**SCIFACT_SOURCE, "split": "train", "selection_uses_gold_labels": True,
+    source = {**SCIFACT_SOURCE, "name": "SciFact public train paired client comparison",
+              "split": "train", "selection_uses_gold_labels": True,
               "partition": "contradiction_comparison_v1", "seed": "client-evaluation-v1",
               "per_class": per_class, "excluded_pairs": len(previous),
               "exclusion_hashes": [hashlib.sha256(data).hexdigest() for data in snapshots]}
@@ -76,7 +77,7 @@ def freeze_plan(batch, destination):
                              "prompt_sha256": sha256(destination / filename),
                              "evidence_sha256": hashlib.sha256(json.dumps(shared_evidence(packet), ensure_ascii=False,
                                                                          sort_keys=True).encode()).hexdigest()})
-    plan = {"protocol": "paired_source_review_v1", "code": _code_record(), "arms": ARMS,
+    plan = {"protocol": COMPARISON_PROTOCOL, "code": _code_record(), "arms": ARMS,
             "cases": len(packets), "decisions": len(schedule), "schedule": schedule,
             "model": MODEL, "reasoning": REASONING, "batch_manifest_sha256": sha256(batch / "manifest.json"),
             "schema_sha256": sha256(destination / "schema.json"),
