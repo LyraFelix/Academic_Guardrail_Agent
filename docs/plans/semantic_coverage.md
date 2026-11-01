@@ -24,10 +24,10 @@ The owner selected an existing LLM client with MCP evidence and validation tools
 
 ```text
 prepare_claim_review(claim, reference_text OR citation_str_or_doi, refs_dir, offline)
-  -> packet_id, claim, reference status, local rule result, evidence page, next_offset
+  -> packet_id, packet_sha256, claim, reference status, local rule result, evidence page, next_offset
 read_claim_evidence(packet_id, offset, limit)
-  -> complete source sentences with stable IDs and coordinates
-record_claim_review(packet_id, judgment)
+  -> available source units with stable IDs, coordinates and the same digest
+record_claim_review(packet_id, judgment, expected_packet_sha256)
   -> saved client judgment + EVIDENCE_LINKS_VALID (not semantic certification)
 ```
 
@@ -44,3 +44,7 @@ python -m pip wheel . --no-index --no-deps --no-build-isolation --wheel-dir <new
 ```
 
 Evidence root: `D:/Internship/Academic code/audit_guardrail_20261101_semantic_coverage/`. Baseline probes reproduce comma fragmentation, entity-number confusion and weak-candidate veto; exact simple alignment and explicit conflicting-evidence controls already pass and must remain so.
+
+## Outcome
+
+Implemented and independently reviewed. See `../client_review_guide.md` for the readable workflow and `../semantic_coverage_results.md` for results. The rules still leave all 339 dev pairs unresolved. The separate 12-pair interactive client pilot provides six support/refutation decisions and six NEI decisions; it is not a general accuracy estimate. Review tightened actual-counterevidence handling, prepare-to-submit snapshot binding, predeclared gold hashes, and NEI coverage accounting. Source units retain available context; upstream chunking can still cut a sentence.

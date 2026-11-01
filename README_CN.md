@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-一个用于检查论文引用的 Python 项目，提供命令行和 MCP 接口。它查询文献元数据、保留撤稿来源，并把正文与可用参考文本做启发式比对，帮助使用者定位需要人工复核的引用。
+一个用于检查论文引用的 Python 项目，提供命令行和 MCP 接口。它查询文献元数据、保留撤稿来源，并给已有的大模型客户端提供带来源的证据包。客户端完成语义判断，服务端核对引用并保存判断与证据快照；本地规则负责提供可解释的检查线索。
 
 本项目目前是学习与工程实践项目。文本相似度不是事实证明，文献存在也不表示正文说法成立。
 
@@ -57,11 +57,11 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 
 先确认文献身份，再归属撤稿证据。歧义候选即使带撤稿标记，也不能直接说用户引用的是撤稿论文。标题中出现 “retraction” 只作为疑似线索；同 DOI 的明确撤稿证据不会被另一来源的否定标记覆盖。
 
-`PASS` 仅用于元数据核查；正文检查至少标为 `NOTICE`，即使 `TEXT_ALIGNED` 也需要人工阅读。`NO_RECORD` 仅表示查询过的来源没有记录，不能解释成“状态正常”。查询超时、限流与无结果分开保留。本地文件通过标题等元数据匹配；另一论文参考文献列表中出现标题，不构成匹配依据。
+`PASS` 仅用于元数据核查；正文规则检查至少标为 `NOTICE`，`TEXT_ALIGNED` 也不等于语义已经核验。客户端应继续结合原文分析。`NO_RECORD` 仅表示查询过的来源没有记录，不能解释成“状态正常”。查询超时、限流与无结果分开保留。本地文件通过标题等元数据匹配；另一论文参考文献列表中出现标题，不构成匹配依据。
 
 ## MCP 使用
 
-本项目实现的是 **一个 MCP Server**，向客户端注册下表中的四个工具。命令行是同一套核验逻辑的另一个入口。
+本项目实现的是 **一个 MCP Server**，向客户端注册七个工具和一个工作流提示。工具是同一个服务提供的不同操作，不是七个 MCP。
 
 | 工具 | 用途 |
 | --- | --- |
@@ -69,6 +69,9 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 | `check_paper_retraction` | 用 DOI 查询撤稿证据，内部复用单条文献核验 |
 | `audit_document_claims` | 审核文档引用及正文，返回核查说明并保存 HTML 报告 |
 | `generate_audit_html_report` | 以生成 HTML 报告为主要输出的便捷入口 |
+| `prepare_claim_review` | 解析文献或接收原文，保存供客户端判断的证据包 |
+| `read_claim_evidence` | 按页继续读取同一证据快照 |
+| `record_claim_review` | 校验快照摘要、证据编号和逐字引用，保存客户端判断 |
 
 MCP 客户端可以启动源码安装后生成的命令：
 
@@ -82,7 +85,11 @@ MCP 客户端可以启动源码安装后生成的命令：
 }
 ```
 
-四个工具均支持 `offline: true`。文献核验和审计支持 `detail` 为 `compact`、`detailed`、`debug`。宿主 Agent 是否调用其他在线工具，由宿主配置控制。
+原有四个工具及 `prepare_claim_review` 支持 `offline: true`；读取和记录证据包始终只访问本地。文献核验和审计支持 `detail` 为 `compact`、`detailed`、`debug`。服务端离线不意味着客户端云模型离线，客户端模型与其他在线工具由宿主配置控制。
+
+使用 `review_claim_workflow` 提示，或让客户端依次完成“准备证据 → 读取全部分页 → 检查主体、关系、数字、范围和反证 → 记录结论”。记录时将准备结果的 `packet_sha256` 传为 `expected_packet_sha256`。规则返回复核或证据不足时，客户端应继续分析可用原文。完整示例和源码阅读顺序见[客户端判断导读](docs/client_review_guide.md)。
+
+客户端给出 `SUPPORTED`、`CONTRADICTED`、`NOT_ENOUGH_EVIDENCE` 或 `UNCERTAIN`。服务端的 `EVIDENCE_LINKS_VALID` 仅说明引用与证据一致，`semantic_judgment_verified` 始终为 false。原 CLI/HTML 报告仍展示规则结果；客户端语义判断保存在单独 JSON 记录中，并由客户端向用户汇报。
 
 ## 学习与验证
 
@@ -103,6 +110,8 @@ python -m pytest tests -q
 测试默认隔离缓存、阻止真实 HTTP、关闭嵌入模型，验证的是工程行为，不是线上 API 可用性或 LLM 的学术推理准确率。
 
 第四阶段提供 [可复现评测流程](benchmarks/README.md) 和 [中文评测导读](docs/phase_four_guide.md)。输入、答案与预测分开保存，每次运行记录代码/数据哈希并可独立重算指标。SciFact 使用全部所引文献配对，报告原生状态、冲突告警和证据摘录诊断；开发回归单独报告。历史脚本已原样归档到 `benchmarks/legacy/`，历史 LLM 准确率仍不作为本版本的已验证能力。
+
+[语义覆盖整改实测](docs/semantic_coverage_results.md) 分开报告规则仍全部未解决的结果和小批实际客户端试跑。证据不足、引用校验成功都不计为成功支持或反驳；小批结果不能写成项目的通用准确率。
 
 [第三阶段代码导读](docs/phase_three_guide.md) 解释数字、否定、因果、范围规则及其人工复核边界。四类问题的合成演示与实际入口验收：
 

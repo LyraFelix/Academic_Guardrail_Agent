@@ -63,10 +63,14 @@ python -m benchmarks run --dataset benchmarks/data/regression_v1 --output benchm
 | `support_alert_rate` / `nei_alert_rate` | 在 SUPPORT / NEI 上发出具体冲突告警的比例；NEI 不表示论断为假 |
 | `aligned_support_fraction` | TEXT_ALIGNED 中 gold=SUPPORT 的比例；只是诊断，生产系统仍要求人工阅读 |
 | `review_required_rate` | REVIEW_REQUIRED 状态比例；没有测量人的工作量 |
+| `rule_unresolved_rate` | (REVIEW_REQUIRED + INSUFFICIENT_EVIDENCE + ERROR) / 全部配对；必须合并看待未解决问题 |
+| `concrete_rule_result_rate` | 其余两种具体规则状态的比例；不等于结论正确率 |
 | `rationale_any_hit` | 主摘录与任一标注证据句有字符重叠 / 所有有证据配对 |
 | `rationale_complete_hit` | 主摘录完整包含至少一组标注证据句 / 所有有证据配对；不是官方证据评分 |
 
 不要将四个复核状态硬映射成三类真值，再计算“综合准确率”。SUPPORT 标签与某些措辞复核提示也可能并存；需要结合失败案例解释。
+
+客户端模型的评测是单独流程，见[客户端导读](../docs/client_review_guide.md#复现客户端试跑)。它使用模型自己填写的结构化判断，分别报告支持/反驳覆盖、NEI、弃判/错误及标签一致率；不能把 NEI 算成已经验证论断。`prepare` 固定 gold 文件哈希但不读标签，`submit` 保存模型原始判断，`score` 才读取答案。所有旧运行保持原样；复算第四阶段原报告应使用其记录的提交版本，新增加的指标在新运行中保存。
 
 ## 源码与历史文件
 

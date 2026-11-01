@@ -2,7 +2,7 @@
 
 English | [中文](README_CN.md)
 
-A Python CLI and MCP server for reviewing academic citations. It retrieves reference metadata, preserves retraction evidence, and provides heuristic comparisons between manuscript claims and available reference text. It is a learning and engineering project, not an automated scientific truth judge.
+A Python CLI and MCP server for reviewing academic citations. It retrieves reference metadata, preserves retraction evidence and gives an existing client model source-linked evidence for claim review. The client judges meaning; the server checks exact quotes and saves the judgment with its evidence snapshot. Local rules remain review hints rather than a scientific truth judge.
 
 ## Install from source
 
@@ -52,7 +52,7 @@ Identity is resolved before retraction facts are assigned to a citation. An ambi
 
 ## MCP
 
-This project runs **one MCP server** that exposes four tools. The CLI is another interface to the same verification service.
+This project runs **one MCP server**, exposing seven tools and one workflow prompt. The tools are operations on that server, not separate MCP servers.
 
 | Tool | Purpose |
 | --- | --- |
@@ -60,6 +60,9 @@ This project runs **one MCP server** that exposes four tools. The CLI is another
 | `check_paper_retraction` | Query retraction evidence by DOI, reusing single-reference verification |
 | `audit_document_claims` | Audit a document, return findings and save an HTML report |
 | `generate_audit_html_report` | A convenience entry point whose main output is the HTML report |
+| `prepare_claim_review` | Resolve a reference or accept supplied text; save an evidence packet for the client |
+| `read_claim_evidence` | Read remaining evidence pages from the same saved snapshot |
+| `record_claim_review` | Check snapshot digest, evidence IDs and exact quotes; save the client's judgment |
 
 Configure an MCP client to launch the installed executable:
 
@@ -67,7 +70,11 @@ Configure an MCP client to launch the installed executable:
 {"mcpServers": {"academic-guardrail": {"command": "academic-guardrail-mcp"}}}
 ```
 
-All tools accept `offline: true`. Citation verification and document audit support `detail: compact | detailed | debug`. Other network tools used by the host agent remain outside this server's control.
+The four original tools and `prepare_claim_review` accept `offline: true`. Reading and recording packets are always local. Citation verification and document audit support `detail: compact | detailed | debug`. The client's model/network configuration remains outside this server's control; server offline mode does not make a cloud model local.
+
+Use the `review_claim_workflow` prompt or ask the client to prepare evidence, read every page, compare subject/relation/numbers/scope/counterevidence, and record its conclusion. Pass the returned `packet_sha256` as `expected_packet_sha256` when recording. A local `REVIEW_REQUIRED` result is a hint for the client to continue, not a final handoff to the user. See the [client workflow and code guide](docs/client_review_guide.md).
+
+Client conclusions are `SUPPORTED`, `CONTRADICTED`, `NOT_ENOUGH_EVIDENCE` or `UNCERTAIN`. `EVIDENCE_LINKS_VALID` only certifies mechanical quote/ID consistency; `semantic_judgment_verified` remains false. The existing CLI/HTML report contains local-rule results; client judgments are separate JSON records and the host client's response.
 
 ## Read and test
 
@@ -89,6 +96,8 @@ Tests isolate caches, block real HTTP and disable embedding models. They validat
 
 Phase four provides a [reproducible evaluation workflow](benchmarks/README.md) and [Chinese evaluation guide](docs/phase_four_guide.md). Inputs, gold labels and predictions are separate; runs record data/code hashes and support scoring replay. All cited SciFact pairs are retained for native-state, conflict-alert and excerpt diagnostics. Development regressions are reported separately. Original scripts are archived under `benchmarks/legacy/`; historical LLM accuracy remains unverified.
 
+The [semantic coverage follow-up](docs/semantic_coverage_results.md) reports the unresolved rule-only result and a small actual client/MCP pilot separately. Neither insufficient evidence nor a valid quote is counted as successful support/refutation. The pilot is not a general accuracy claim or a comparison against a bare model.
+
 The [phase-three guide](docs/phase_three_guide.md) explains the separate numeric, negation, causal and scope rules. Each finding retains its triggering evidence. Run the synthetic four-category example or replay the real offline CLI/MCP interfaces:
 
 ```bash
@@ -100,4 +109,4 @@ The old five-element `evaluate_alignment()` tuple remains callable, but its stat
 
 ## Limitations
 
-Parsing covers common numbered references, repeated/grouped citations, literal BibTeX fields and common LaTeX citation commands. It does not expand arbitrary TeX macros, cover every author-year style or perform OCR. DOCX extraction covers body paragraphs and tables; complex PDF layout and cross-page sentence order remain limited. Local metadata extraction is heuristic. Matching scores are not calibrated probabilities. Bounded wording checks flag explicit quantities, negation and qualifiers; complex syntax, units, paraphrases, cross-sentence context and translation still require human review. Online and local retraction coverage may be incomplete or stale. No scientific truth or benchmark accuracy claim follows from the regression tests.
+Parsing covers common numbered references, repeated/grouped citations, literal BibTeX fields and common LaTeX citation commands. It does not expand arbitrary TeX macros, cover every author-year style or perform OCR. DOCX extraction covers body paragraphs and tables; complex PDF layout and cross-page sentence order remain limited. Local metadata extraction is heuristic. Matching scores are not calibrated probabilities. Bounded wording checks flag explicit quantities, negation and qualifiers; complex semantics need the client model's analysis, which can still be wrong. Missing sources and unresolved ambiguity need additional evidence or human input. Online and local retraction coverage may be incomplete or stale. No scientific truth or benchmark accuracy claim follows from the regression tests.
