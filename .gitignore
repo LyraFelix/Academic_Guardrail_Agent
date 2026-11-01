@@ -57,3 +57,7 @@ env/
 guardrail_cache.db
 scratch/
 
+# Reproducible evaluation keeps raw datasets and every run local.
+benchmarks/data/
+benchmarks/runs/
+

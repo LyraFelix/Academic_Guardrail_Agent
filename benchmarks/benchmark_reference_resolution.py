@@ -1,10 +1,7 @@
-"""Dedicated Reference Entity Resolution & Candidate Re-Ranking Benchmark.
+"""Eight handwritten provided-candidate regression fixtures; not external retrieval accuracy.
 
-Evaluates ReferenceResolver against gold-standard citations for:
-- Top-1 Accuracy
-- MRR (Mean Reciprocal Rank)
-- Recall@5
-- Abstention Accuracy (Ambiguity & Hallucinated Citation Rejection)
+Original script preserved in legacy/benchmark_reference_resolution.py.txt.
+The dataset remains importable for compatibility with its existing unit test.
 """
 
 import sys
@@ -207,4 +204,4 @@ def run_reference_resolution_benchmark():
 
 
 if __name__ == "__main__":
-    run_reference_resolution_benchmark()
+    raise SystemExit("This is a handwritten regression fixture. Run python -m pytest tests/test_benchmark_ref_resolution.py -q; see benchmarks/README.md.")

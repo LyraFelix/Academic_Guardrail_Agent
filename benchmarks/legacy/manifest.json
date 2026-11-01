@@ -1,0 +1,15 @@
+{
+  "source_commit": "9e9365d13296cb0bc9f40da13dce275c7c8d753a",
+  "files": {
+    "benchmark_baselines.py": "2311d9627054e144a21b3c9e6b29c993037e9d10be0f3c2a7858c78b488ff0b9",
+    "benchmark_claims.py": "c7fd290fe9a3c1f93639ee38ca6921a9c188fac410824a38d2cf6ddda413e6d8",
+    "benchmark_offline.py": "7e29864bf88e2a542b970c6792059813cc3eb9d395415c981b610706a77bd51a",
+    "benchmark_reference_resolution.py": "570d47c583c00fbb765f8f44dd0ef71dfbf0e48b66580159be4ca342c8dc0425",
+    "benchmark_runner.py": "aa858cfc12e149e84a0bcddd543373ea9428cbfa0c2d2e2aac929b11874cbef4",
+    "benchmark_scifact_official.py": "39b8b5c8acaa4e9b13a5c20baaab38ae1b9716747024b29a345b8d8bb67aae3d",
+    "benchmark_submodules_async.py": "3dd1df0e6d821077dff4e32e98053d0e4e387be59180ea841901fc85741fb63f",
+    "evaluate_llm_scifact_results.py": "8e5d062413e06d74cd8f3f15bbc60c1b24a2554e520912ce3ee8add215d27c7b",
+    "prepare_scifact_batches.py": "9bd70f752b18e555f16855dbbc30e455fe86f5684a08dc1eecf208a0668eca9d",
+    "synthetic_demo_benchmark.py": "4fa67bba78e1ea174ae92b7c79644737c6fcf63a179e04366c8ffab347075f37"
+  }
+}

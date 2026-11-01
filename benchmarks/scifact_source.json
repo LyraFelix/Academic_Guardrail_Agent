@@ -1,0 +1,13 @@
+{
+  "name": "SciFact official release, dev split",
+  "url": "https://scifact.s3-us-west-2.amazonaws.com/release/latest/data.tar.gz",
+  "sha256": "11c621288d41ac144d29b13b0f8503b3820b7d6e8b1f6ff24dff335c196d76be",
+  "bytes": 3115079,
+  "attribution": "Wadden et al. (2020), Fact or Fiction: Verifying Scientific Claims",
+  "paper": "https://aclanthology.org/2020.emnlp-main.609/",
+  "schema": "https://github.com/allenai/scifact/blob/master/doc/data.md",
+  "license_source": "https://github.com/allenai/scifact/blob/master/LICENSE.md",
+  "claims_license": "CC BY 4.0",
+  "abstracts_license": "ODC-By 1.0",
+  "verified_date": "2026-11-01"
+}

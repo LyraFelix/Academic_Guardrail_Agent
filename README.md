@@ -87,7 +87,7 @@ python -m pytest tests -q
 
 Tests isolate caches, block real HTTP and disable embedding models. They validate software behavior, not live provider availability or LLM benchmark accuracy.
 
-Historical scripts and data remain in `benchmarks/` for later reconstruction. Historical accuracy, latency and small-fixture metrics are not presented as verified capabilities of this version; evaluator compatibility, sampling and original model traces still need independent review.
+Phase four provides a [reproducible evaluation workflow](benchmarks/README.md) and [Chinese evaluation guide](docs/phase_four_guide.md). Inputs, gold labels and predictions are separate; runs record data/code hashes and support scoring replay. All cited SciFact pairs are retained for native-state, conflict-alert and excerpt diagnostics. Development regressions are reported separately. Original scripts are archived under `benchmarks/legacy/`; historical LLM accuracy remains unverified.
 
 The [phase-three guide](docs/phase_three_guide.md) explains the separate numeric, negation, causal and scope rules. Each finding retains its triggering evidence. Run the synthetic four-category example or replay the real offline CLI/MCP interfaces:
 
