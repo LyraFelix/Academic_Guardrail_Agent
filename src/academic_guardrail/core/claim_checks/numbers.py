@@ -40,6 +40,13 @@ def quantities(text: str) -> list[Quantity]:
     value = normalize(text)
     extracted = []
     for match in QUANTITY.finditer(value):
+        prefix = value[:match.start()]
+        previous = prefix[-2:-1] if prefix.endswith("-") else prefix[-1:]
+        # αvβ8 and IL-2 are names. Chinese prose commonly attaches quantities
+        # directly to a verb (降低90%), so a blanket Unicode word boundary
+        # would incorrectly suppress those actual measurements.
+        if previous.isalpha() and not "\u4e00" <= previous <= "\u9fff":
+            continue
         unit = match.group("unit") or ""
         dimension, scale = UNITS.get(unit, ("unspecified", "1"))
         qualifier = next((name for pattern, name in QUALIFIERS if re.search(pattern, value[:match.start()])), "exact")

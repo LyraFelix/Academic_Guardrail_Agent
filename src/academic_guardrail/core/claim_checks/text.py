@@ -53,10 +53,11 @@ def different_languages(first: str, second: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", first)) != bool(re.search(r"[\u4e00-\u9fff]", second))
 
 
-def sentence_units(text: str) -> list[TextUnit]:
+def sentence_units(text: str, *, split_semicolons: bool = True) -> list[TextUnit]:
     """Keep decimal points and return exact original substrings."""
     boundaries = [0]
-    for match in re.finditer(r"[。！？!?；;]|\.(?!\d)(?=\s|$)|\n\s*\n", text):
+    punctuation = r"[。！？!?；;]" if split_semicolons else r"[。！？!?]"
+    for match in re.finditer(punctuation + r"|\.(?!\d)(?=\s|$)|\n\s*\n", text):
         prefix = text[:match.start()]
         if match.group() == "." and re.search(r"\b(?:Dr|Mr|Ms|Mrs|Prof|e\.g|i\.e)$", prefix, re.I):
             continue
@@ -88,17 +89,30 @@ def clause_units(text: str) -> list[TextUnit]:
             units.append(sentence)
             continue
         start = 0
+        fragments = []
         for match in separator.finditer(sentence.text):
             segment = sentence.text[start:match.start()]
             offset = sentence.start + start
             if segment.strip():
                 left = offset + len(segment) - len(segment.lstrip())
-                units.append(TextUnit(segment.strip(), left, left + len(segment.strip())))
+                fragments.append(TextUnit(segment.strip(), left, left + len(segment.strip())))
             start = match.end()
         segment = sentence.text[start:]
         if segment.strip():
             left = sentence.start + start + len(segment) - len(segment.lstrip())
-            units.append(TextUnit(segment.strip(), left, left + len(segment.strip())))
+            fragments.append(TextUnit(segment.strip(), left, left + len(segment.strip())))
+        # Commas around an apposition are not boundaries between assertions.
+        # Keep the sentence if splitting would leave a fragment without its
+        # own subject/predicate/outcome. Explicit contrast clauses keep the
+        # existing local-negation behavior ("Although X ..., Y ...").
+        contrast = re.search(r"\b(?:although|however|whereas|while|but)\b|虽然|但是|然而|尽管|而且|反而", sentence.text, re.I)
+        incomplete = any(not (item := relation(fragment.text)) or
+                         not anchor_tokens(item.subject) or not anchor_tokens(item.outcome)
+                         for fragment in fragments)
+        if len(fragments) > 1 and not contrast and incomplete:
+            units.append(sentence)
+        else:
+            units.extend(fragments)
     return units
 
 

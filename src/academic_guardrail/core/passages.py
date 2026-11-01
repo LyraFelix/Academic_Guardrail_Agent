@@ -34,12 +34,12 @@ def build_passages(document: ExtractedText, start: int = 0, end: int | None = No
     return passages
 
 
-def locate_excerpt(passage: EvidencePassage, excerpt: str):
+def locate_excerpt(passage: EvidencePassage, excerpt: str, *, offset: int | None = None):
     """Return an exact location only when the evaluator selected a real substring."""
     if passage.location is None:
         return None
-    offset = passage.text.find(excerpt)
-    if offset < 0:
+    offset = passage.text.find(excerpt) if offset is None else offset
+    if offset < 0 or passage.text[offset:offset + len(excerpt)] != excerpt:
         return None
     location = passage.location.model_copy(deep=True)
     location.char_start += offset

@@ -176,6 +176,13 @@ class AuditService:
         prepared = await self._prepare_reference(cit, ref_store)
         return self._evaluate_occurrence(prepared, claim)
 
+    async def prepare_client_review(self, citation: Citation, claim: str,
+                                    ref_store: Optional[LocalRefStore] = None):
+        """Reuse identity/retraction precedence before exposing text to a client."""
+        from academic_guardrail.core.claim_review import build_review_packet
+        prepared = await self._prepare_reference(citation, ref_store)
+        return build_review_packet(claim, prepared.passages, prepared.result)
+
     def _evaluate_occurrence(self, prepared: PreparedReference,
                              claim: Optional[ContextClaim]) -> VerificationResult:
         result = prepared.result.model_copy(deep=True)
@@ -212,7 +219,7 @@ class AuditService:
                                 "CORE_FALLBACK" if self.evaluator.semantic_matcher._model_load_failed else "CORE")
         result.evidence_text = assessment.evidence_text
         result.evidence_location = assessment.evidence_location
-        result.evidence_granularity = "CLAUSE"
+        result.evidence_granularity = "SENTENCE"
         if assessment.state == "POTENTIAL_CONFLICT":
             result.status, result.risk_level = VerificationStatus.CLAIM_MISMATCH, RiskLevel.WARNING
         elif assessment.state == "REVIEW_REQUIRED":

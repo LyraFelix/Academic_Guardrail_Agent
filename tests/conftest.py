@@ -10,6 +10,7 @@ def isolated_runtime(monkeypatch, tmp_path):
     monkeypatch.setattr(cache, "_DEFAULT_CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(cache, "_global_cache", None)
     monkeypatch.setenv("RETRACTION_DB_PATH", ":memory:")
+    monkeypatch.setenv("ACADEMIC_GUARDRAIL_REVIEW_DIR", str(tmp_path / "claim_reviews"))
     monkeypatch.setattr(semantic_matcher, "_HAS_ST", False)
     monkeypatch.setattr(SystemProxyDetector, "probe_local_proxy_ports", lambda: None)
     attempted = []

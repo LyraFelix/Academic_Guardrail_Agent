@@ -20,6 +20,11 @@ from academic_guardrail.core.passages import locate_excerpt
 from academic_guardrail.core.semantic_matcher import SemanticMatcher
 from academic_guardrail.core.text_similarity import ACADEMIC_SYNONYMS, UniversalLexicalMatcher
 
+# These notes can describe a weaker neighboring assertion. Actual polarity,
+# numerical or evidence-quality concerns must still block an aligned verdict.
+CONTEXT_ONLY_FINDINGS = {"COMPARISON_UNCERTAIN", "SCOPE_OMITTED", "POPULATION_CHANGED",
+                         "TIME_SCOPE_CHANGED", "MODALITY_STRENGTHENED"}
+
 
 @dataclass
 class Candidate:
@@ -28,10 +33,14 @@ class Candidate:
     score: float
     engine: str
     findings: list[SemanticFinding]
+    context_text: str
+    text_start: int
+    context_start: int
 
     def attach_source(self, findings: list[SemanticFinding]) -> list[SemanticFinding]:
         for item in findings:
-            item.evidence_location = locate_excerpt(self.passage, item.evidence_text)
+            offset = self.text_start + self.text.find(item.evidence_text)
+            item.evidence_location = locate_excerpt(self.passage, item.evidence_text, offset=offset)
             item.evidence_source = self.passage.source_kind
         return findings
 
@@ -72,9 +81,12 @@ class ClaimEvaluator:
     def assess_passages(self, claim: str, passages: list[EvidencePassage]) -> ClaimAssessment:
         candidates = []
         for passage in passages:
-            for unit in clause_units(passage.text):
-                score, engine = self._similarity(claim, unit.text)
-                candidates.append(Candidate(unit.text, passage, score, engine, []))
+            for sentence in sentence_units(passage.text, split_semicolons=False):
+                for unit in clause_units(sentence.text):
+                    score, engine = self._similarity(claim, unit.text)
+                    candidates.append(Candidate(text=unit.text, passage=passage, score=score, engine=engine,
+                                                findings=[], context_text=sentence.text,
+                                                text_start=sentence.start + unit.start, context_start=sentence.start))
         if not claim.strip() or not candidates:
             return ClaimAssessment(state="INSUFFICIENT_EVIDENCE", message="缺少断言或可用参考文本。")
         candidates.sort(key=lambda item: item.score, reverse=True)
@@ -123,8 +135,15 @@ class ClaimEvaluator:
         findings = [f for c in comparable for f in c.findings]
         if conflicts:
             best = conflicts[0]
+        elif aligned:
+            best = aligned[0]
+        # A weak, uncertain neighbor does not erase an explicit matched
+        # assertion. Keep its findings for the client model to consider.
+        # Actual opposing assertions were handled above as disagreement.
         state = ("POTENTIAL_CONFLICT" if conflicts else
-                 "REVIEW_REQUIRED" if findings else "TEXT_ALIGNED")
+                 "TEXT_ALIGNED" if aligned else "REVIEW_REQUIRED")
+        if state == "TEXT_ALIGNED" and any(f.code not in CONTEXT_ONLY_FINDINGS for f in findings):
+            state = "REVIEW_REQUIRED"
         if compound_claim(claim):
             findings.extend(best.attach_source([finding("COMPOUND_CLAIM", "EVIDENCE",
                                     "断言包含多个结果或数量，请拆成单独论断逐项核对；一个匹配片段不能覆盖整句。", claim, best.text)]))
@@ -166,7 +185,8 @@ class ClaimEvaluator:
             "INSUFFICIENT_EVIDENCE": "没有找到可用于这项论断的对应证据，不能据此判定论断为假。",
         }
         return ClaimAssessment(state=state, similarity_score=best.score, message=messages[state],
-                               evidence_text=best.text, evidence_location=locate_excerpt(best.passage, best.text),
+                               evidence_text=best.context_text,
+                               evidence_location=locate_excerpt(best.passage, best.context_text, offset=best.context_start),
                                text_source=best.passage.source_kind, alignment_engine=best.engine,
                                findings=findings)
 

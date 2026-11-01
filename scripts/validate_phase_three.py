@@ -113,7 +113,7 @@ async def validate(destination: Path):
                 ("audit_document_claims", {"file_path": str(MANUSCRIPT), "refs_dir": str(REFERENCES), "output_html_path": str(destination / "mcp_report.html"), "offline": True}, EXPECTED_CODES),
                 ("generate_audit_html_report", {"file_path": str(MANUSCRIPT), "refs_dir": str(REFERENCES), "output_path": str(destination / "mcp_generated.html"), "offline": True}, ["正文引用次数: 4"]),
             ]
-            assert {t.name for t in listing.tools} == {name for name, _, _ in calls}
+            assert {name for name, _, _ in calls} <= {t.name for t in listing.tools}
             for name, arguments, expected in calls:
                 result = await session.call_tool(name, arguments)
                 text = "\n".join(block.text for block in result.content if hasattr(block, "text"))

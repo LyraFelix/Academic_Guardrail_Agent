@@ -45,6 +45,7 @@ def write_reports(destination, metrics, inputs, gold, predictions):
              f'Claims: {metrics["claims"]}; pairs/cases: {metrics["total"]}; execution errors: {metrics["errors"]}.',
              "", "These are native-state diagnostics, not scientific truth accuracy or an official SciFact score.",
              "TEXT_ALIGNED still requires human review. REVIEW_REQUIRED is a state frequency, not measured human workload.",
+             "rule_unresolved_rate includes REVIEW_REQUIRED, INSUFFICIENT_EVIDENCE and ERROR; concrete results are not scientific truth certification.",
              "", "| State | Count |", "| --- | --- |"]
     lines.extend(f"| {state} | {count} |" for state, count in metrics["state_counts"].items())
     lines.extend(["", "| Diagnostic | Value (numerator/denominator) |", "| --- | --- |"])

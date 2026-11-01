@@ -5,7 +5,7 @@ from academic_guardrail.core.text_similarity import UniversalLexicalMatcher
 from benchmarks.schema import Prediction
 
 METHOD_CONFIGS = {
-    "guardrail": {"embeddings": False, "description": "frozen phase-three rules"},
+    "guardrail": {"embeddings": False, "description": "context-preserving bounded rules", "rule_version": "context_v1"},
     "overlap": {"embeddings": False, "threshold": 0.50, "description": "lexical sentence retrieval only"},
     "always_review": {"embeddings": False, "description": "always REVIEW_REQUIRED"},
 }

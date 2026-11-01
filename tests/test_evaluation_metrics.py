@@ -33,6 +33,14 @@ def test_scifact_counts_include_errors_and_abstentions():
     assert "accuracy" not in result  # Review states are not three-way truth labels.
 
 
+def test_unresolved_metric_counts_review_insufficient_and_errors_together():
+    inputs, gold, predictions = sample_data()
+    predictions[4] = Prediction(id="4", state="INSUFFICIENT_EVIDENCE")
+    result = score_predictions("scifact_cited_abstract_v1", inputs, gold, predictions)
+    assert result["rule_unresolved_rate"] == {"numerator": 3, "denominator": 5, "value": 0.6}
+    assert result["concrete_rule_result_rate"] == {"numerator": 2, "denominator": 5, "value": 0.4}
+
+
 def test_no_alerts_does_not_manufacture_perfect_precision():
     inputs, gold, _ = sample_data()
     predictions = [Prediction(id=item.id, state="REVIEW_REQUIRED") for item in inputs]

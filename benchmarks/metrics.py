@@ -25,6 +25,9 @@ def score_predictions(protocol, inputs, gold, predictions):
     common = {"protocol": protocol, "total": len(rows), "claims": len({item.claim_id for item in inputs}),
               "errors": sum(p.state == "ERROR" for _, _, p in rows),
               "state_counts": {state: sum(p.state == state for _, _, p in rows) for state in STATES}}
+    unresolved = sum(common["state_counts"][state] for state in ("REVIEW_REQUIRED", "INSUFFICIENT_EVIDENCE", "ERROR"))
+    common["rule_unresolved_rate"] = rate(unresolved, len(rows))
+    common["concrete_rule_result_rate"] = rate(len(rows) - unresolved, len(rows))
     if protocol == "semantic_regression_v1":
         if any(g.expected_state is None or g.label is not None for _, g, _ in rows):
             raise ValueError("Regression labels require expected_state only")
