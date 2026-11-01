@@ -118,7 +118,13 @@ def test_common_checker_binds_the_stored_packet_to_original_digest(tmp_path):
         load_frozen_packet(tmp_path, view)
 
 
-def test_one_tool_violation_stops_before_the_next_batch(tmp_path, monkeypatch):
+@pytest.mark.parametrize("failure,tool_items,stream_valid", [
+    ("unexpected_tool_use", ["command_execution"], True),
+    ("cli_or_turn_failure", ["command_execution"], True),
+    ("timeout", ["command_execution"], True),
+    ("timeout", [], False),
+])
+def test_one_tool_violation_stops_before_the_next_batch(tmp_path, monkeypatch, failure, tool_items, stream_valid):
     from scripts import run_paired_review as runner
     from types import SimpleNamespace
 
@@ -134,7 +140,9 @@ def test_one_tool_violation_stops_before_the_next_batch(tmp_path, monkeypatch):
 
     def fake_invoke(prompt, schema, destination, timeout):
         calls.append(destination.name)
-        return {"error": "unexpected_tool_use" if destination.name == "attempt_000" else None,
+        failed = destination.name == "attempt_000"
+        return {"error": failure if failed else None,
+                "tool_items": tool_items if failed else [], "event_stream_valid": stream_valid if failed else True,
                 "response": judgment(value).model_dump(), "elapsed_seconds": 1, "usage": None}
 
     monkeypatch.setattr(runner, "invoke", fake_invoke)
@@ -174,3 +182,20 @@ def test_real_plan_roundtrip_preserves_prompt_bytes_on_windows(tmp_path):
     (plan_dir / plan["schedule"][0]["prompt_file"]).write_bytes(b"Changed prompt")
     with pytest.raises(ValueError, match="Prompt changed"):
         load_plan(plan_dir / "plan.json", batch)
+
+
+def test_timeout_keeps_unreadable_events_as_an_isolation_failure(tmp_path, monkeypatch):
+    from scripts import codex_review_client as client
+    import subprocess
+
+    monkeypatch.setattr(client.shutil, "which", lambda name: "codex")
+    monkeypatch.setattr(client.tempfile, "tempdir", str(tmp_path))
+
+    def fail(*args, **kwargs):
+        raise subprocess.TimeoutExpired("codex", 1, output=b'{"type":"item.started"', stderr=b'')
+
+    monkeypatch.setattr(client.subprocess, "run", fail)
+    result = client.invoke("Synthetic text", {"type": "object"}, tmp_path / "attempt", timeout=1)
+    assert result["error"] == "timeout"
+    assert result["event_stream_valid"] is False
+    assert json.loads((tmp_path / "attempt/receipt.json").read_bytes())["event_stream_valid"] is False

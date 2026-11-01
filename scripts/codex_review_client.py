@@ -91,9 +91,11 @@ def invoke(prompt, schema, destination, timeout=120):
             stderr = stderr.decode("utf-8", "replace") if isinstance(stderr, bytes) else stderr
     (destination / "events.jsonl").write_text(stdout, encoding="utf-8")
     (destination / "stderr.txt").write_text(stderr, encoding="utf-8")
+    event_stream_valid = True
     try:
         events = parse_events(stdout)
     except (ValueError, KeyError, TypeError):
+        event_stream_valid = False
         error = error or "invalid_event_stream"
         events = {"thread_ids": [], "completed_turns": 0, "usage": None, "tool_items": [], "failed_turns": 0, "warnings": []}
     response = None
@@ -108,6 +110,7 @@ def invoke(prompt, schema, destination, timeout=120):
             except (OSError, ValueError):
                 error = "missing_or_invalid_json"
     result = {"requested_model": MODEL, "reasoning": REASONING, "elapsed_seconds": time.monotonic() - started,
-              "returncode": returncode, "error": error, "response": response, **events}
+              "returncode": returncode, "error": error, "event_stream_valid": event_stream_valid,
+              "response": response, **events}
     (destination / "receipt.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return result

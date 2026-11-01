@@ -141,7 +141,8 @@ def run(plan_path, batch, output, timeout=120):
                         manifest["attempted"] += 1
                     print(json.dumps({"completed": len(rows), "planned": len(prompts),
                                       "execution_errors": sum(row["prediction"] == "ERROR" for row in rows)}), flush=True)
-                    if any(receipt.get("error") in {"unexpected_tool_use", "invalid_event_stream"}
+                    if any(receipt.get("tool_items") or receipt.get("event_stream_valid") is False
+                           or receipt.get("error") in {"unexpected_tool_use", "invalid_event_stream"}
                            for receipt in receipts[-len(futures):]):
                         raise RuntimeError("Isolation could not be verified; stop before further model calls")
                     if all(receipt.get("error") for receipt in receipts[-len(futures):]):
