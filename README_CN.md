@@ -113,6 +113,8 @@ python -m pytest tests -q
 
 [语义覆盖整改实测](docs/semantic_coverage_results.md) 分开报告规则仍全部未解决的结果和小批实际客户端试跑。证据不足、引用校验成功都不计为成功支持或反驳；小批结果不能写成项目的通用准确率。
 
+[扩大样本后的实测](docs/client_evaluation_results.md) 新增 60 条公开 train 样本，分开发现组和后续验证组，并明确由当前 Codex 助手判断。结果保留错误，没有证明语义准确率提升；新增可引用的改写建议帮助缩小表述范围，原论断结论仍单独计分。
+
 [第三阶段代码导读](docs/phase_three_guide.md) 解释数字、否定、因果、范围规则及其人工复核边界。四类问题的合成演示与实际入口验收：
 
 ```powershell

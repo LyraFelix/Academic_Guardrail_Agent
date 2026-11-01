@@ -98,6 +98,8 @@ Phase four provides a [reproducible evaluation workflow](benchmarks/README.md) a
 
 The [semantic coverage follow-up](docs/semantic_coverage_results.md) reports the unresolved rule-only result and a small actual client/MCP pilot separately. Neither insufficient evidence nor a valid quote is counted as successful support/refutation. The pilot is not a general accuracy claim or a comparison against a bare model.
 
+The [expanded client evaluation](docs/client_evaluation_results.md) adds 60 public-train cases in separate discovery/validation partitions and explicitly records the interactive Codex client. It reports remaining errors rather than claiming a verified accuracy gain. Optional source-linked revision suggestions help draft narrower statements without changing the original claim's verdict.
+
 The [phase-three guide](docs/phase_three_guide.md) explains the separate numeric, negation, causal and scope rules. Each finding retains its triggering evidence. Run the synthetic four-category example or replay the real offline CLI/MCP interfaces:
 
 ```bash

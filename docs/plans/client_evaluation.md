@@ -21,3 +21,7 @@ Evidence root: `D:/Internship/Academic code/audit_guardrail_20261101_client_eval
 - Any prompt improvement derived from discovery must be documented as a hypothesis until independently tested.
 - Correct ambiguous wording in the earlier result report without replacing historical data.
 - Tests and scripted tool judgments are engineering checks. Only actual assistant-produced judgments count as the interactive pilot.
+
+## Outcome
+
+All 60 new cases were judged and saved before opening each partition's labels. Discovery agreement was 30/36, subsequent validation 18/24; these are different samples, so there is no established causal improvement. Implemented comparison-boundary preservation, clearer comparative reasoning instructions, optional source-linked revision suggestions, client identity records and per-class metrics. The validation group produced 11 suggestions, separate from original-claim correctness. All 349 tests passed. Preserve all errors and annotation/text tensions; see `../client_evaluation_results.md`.
