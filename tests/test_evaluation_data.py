@@ -11,7 +11,7 @@ import pytest
 from benchmarks.datasets import load_gold, load_inputs, prepare_regression, prepare_scifact
 
 
-def make_archive(path: Path, *, missing_document=False, conflicting=False):
+def make_archive(path: Path, *, missing_document=False, conflicting=False, duplicate_citation=False):
     corpus = [{"doc_id": 10, "title": "A", "abstract": ["First sentence.", "Second sentence."]},
               {"doc_id": 20, "title": "B", "abstract": ["Other evidence."]}]
     if missing_document:
@@ -21,6 +21,8 @@ def make_archive(path: Path, *, missing_document=False, conflicting=False):
         evidence.append({"label": "CONTRADICT", "sentences": [0]})
     claims = [{"id": 1, "claim": "A claim.", "cited_doc_ids": [10, 20], "evidence": {"10": evidence}},
               {"id": 2, "claim": "Another claim.", "cited_doc_ids": [20], "evidence": {}}]
+    if duplicate_citation:
+        claims[1]["cited_doc_ids"].append(20)
     with tarfile.open(path, "w:gz") as archive:
         for name, records in [("corpus", corpus), ("claims_dev", claims)]:
             data = "".join(json.dumps(row) + "\n" for row in records).encode()
@@ -46,6 +48,22 @@ def test_all_cited_documents_remain_including_unlabeled_negative(tmp_path):
     assert "gold" not in (destination / "inputs.jsonl").read_text()
     assert "rationales" not in (destination / "inputs.jsonl").read_text()
     assert manifest["source"]["sha256"] == source["sha256"]
+
+
+def test_duplicate_source_citation_is_recorded_and_counted_once(tmp_path):
+    # Official dev claim 1245 repeats the same document in cited_doc_ids.
+    archive = tmp_path / "source.tar.gz"
+    source = make_archive(archive, duplicate_citation=True)
+    destination = tmp_path / "prepared"
+    prepare_scifact(archive, destination, source=source)
+    inputs, manifest = load_inputs(destination)
+    assert [row.id for row in inputs] == ["1:10", "1:20", "2:20"]
+    assert manifest["counts"] == {"claims": 2, "pairs": 3}
+    assert manifest["preparation"] == {
+        "raw_citation_occurrences": 4,
+        "duplicate_citations": [{"claim_id": 2, "doc_id": 20, "removed_occurrences": 1}],
+    }
+    assert (destination / "source.tar.gz").read_bytes() == archive.read_bytes()
 
 
 @pytest.mark.parametrize("problem", ["missing_document", "conflicting"])

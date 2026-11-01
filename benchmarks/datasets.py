@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from collections import Counter
 from pathlib import Path
 import shutil
 import tarfile
@@ -78,7 +79,7 @@ def _raw_index(records, key):
     return indexed
 
 
-def _write_dataset(destination, inputs, gold, protocol, source):
+def _write_dataset(destination, inputs, gold, protocol, source, *, preparation=None):
     if not inputs or set(unique_by_id(inputs)) != set(unique_by_id(gold)):
         raise ValueError("Empty dataset or unequal input/gold IDs")
     destination.mkdir(parents=True, exist_ok=False)
@@ -87,6 +88,8 @@ def _write_dataset(destination, inputs, gold, protocol, source):
     manifest = {"schema_version": 1, "protocol": protocol, "source": source,
                 "counts": {"claims": len({row.claim_id for row in inputs}), "pairs": len(inputs)},
                 "files": {name: sha256(destination / name) for name in ("inputs.jsonl", "gold.jsonl")}}
+    if preparation is not None:
+        manifest["preparation"] = preparation
     write_json(destination / "manifest.json", manifest)
 
 
@@ -98,13 +101,22 @@ def prepare_scifact(archive_path: Path, destination: Path, *, source=None):
         corpus = _raw_index(_archive_records(archive, "data/corpus.jsonl"), "doc_id")
         claims = _raw_index(_archive_records(archive, "data/claims_dev.jsonl"), "id")
     inputs, gold = [], []
+    preparation = {"raw_citation_occurrences": 0, "duplicate_citations": []}
     for claim_id, claim in sorted(claims.items()):
         cited = claim["cited_doc_ids"]
-        if not cited or any(type(doc) is not int for doc in cited) or len(cited) != len(set(cited)):
+        if not cited or any(type(doc) is not int for doc in cited):
             raise ValueError(f"Invalid cited document IDs for claim {claim_id}")
+        preparation["raw_citation_occurrences"] += len(cited)
+        # A repeated source citation is one pair, not two independent examples.
+        # Keep the original archive and record every normalization explicitly.
+        cited_counts = Counter(cited)
+        preparation["duplicate_citations"].extend(
+            {"claim_id": claim_id, "doc_id": doc_id, "removed_occurrences": count - 1}
+            for doc_id, count in sorted(cited_counts.items()) if count > 1
+        )
         if set(claim["evidence"]) - {str(doc) for doc in cited}:
             raise ValueError(f"Annotated document outside cited list for claim {claim_id}")
-        for doc_id in sorted(cited):
+        for doc_id in sorted(cited_counts):
             if doc_id not in corpus:
                 raise ValueError(f"Missing cited document {doc_id}")
             sentences = corpus[doc_id]["abstract"]
@@ -121,7 +133,7 @@ def prepare_scifact(archive_path: Path, destination: Path, *, source=None):
             inputs.append(InputCase(id=identifier, claim_id=str(claim_id), doc_id=str(doc_id),
                                     claim=claim["claim"], sentences=sentences))
             gold.append(GoldCase(id=identifier, label=next(iter(labels)) if labels else "NEI", rationales=rationales))
-    _write_dataset(destination, inputs, gold, "scifact_cited_abstract_v1", source)
+    _write_dataset(destination, inputs, gold, "scifact_cited_abstract_v1", source, preparation=preparation)
     shutil.copyfile(archive_path, destination / "source.tar.gz")
 
 

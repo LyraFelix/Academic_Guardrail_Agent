@@ -52,7 +52,7 @@ python -m benchmarks run --dataset benchmarks/data/regression_v1 --output benchm
 
 ## 如何解释 SciFact 结果
 
-固定数据为 300 条 dev 论断与全部 340 个所引文献配对：SUPPORT 138、CONTRADICT 71、NEI 131。每对提供完整摘要，不提供标注证据句。粒度是**配对**，同一论断引用多篇文献时会出现多行。
+固定数据为 300 条 dev 论断与全部 339 个唯一的所引文献配对：SUPPORT 138、CONTRADICT 71、NEI 130。原始数据有 340 次引用，其中 claim 1245 对 document 7662395 重复引用一次；准备流程保留原始 archive，并在 manifest 的 `preparation` 中登记去重过程，不重复计分。每对提供完整摘要，不提供标注证据句。粒度是**配对**，同一论断引用不同文献时会出现多行。
 
 这测试“给定所引文献时，当前规则发出什么提示”。它不测试从 5,183 篇文献中检索，不核验真实 DOI、解析稿件或撤稿覆盖，也不是 [官方 SciFact leaderboard 指标](https://github.com/allenai/scifact/blob/master/doc/evaluation.md)。dev 曾用于项目历史评测，不能称为从未接触过的留出集。
 
