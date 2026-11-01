@@ -29,6 +29,8 @@ def setup_records(tmp_path):
     (submission / "predictions.jsonl").write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
     (submission / "judgments.jsonl").write_text("{}\n", encoding="utf-8")
     write_json(submission / "manifest.json", {"status": "completed_with_errors",
+               "client": {"application": "Codex", "model_id": None, "execution_mode": "interactive",
+                          "context_description": "Current conversation; model version not exposed."},
                "batch_manifest_sha256": sha256(batch / "manifest.json"),
                "predictions_sha256": sha256(submission / "predictions.jsonl"),
                "judgments_sha256": sha256(submission / "judgments.jsonl")})
@@ -43,6 +45,11 @@ def test_client_metrics_keep_abstentions_and_errors_in_denominator(tmp_path):
     assert result["support_or_contradict_coverage"]["numerator"] == 1
     assert result["agreement_on_support_or_contradict"]["denominator"] == 1
     assert result["state_by_gold"]["CONTRADICT"]["ABSTAIN"] == 1
+    assert result["client"]["application"] == "Codex"
+    assert result["client"]["model_id"] is None
+    assert result["class_metrics"]["CONTRADICT"]["recall"]["numerator"] == 0
+    assert result["class_metrics"]["CONTRADICT"]["recall"]["denominator"] == 1
+    assert len(result["cases"]) == 3
 
 
 def test_changed_client_predictions_are_rejected(tmp_path):

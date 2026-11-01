@@ -14,10 +14,11 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Literal
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from academic_guardrail.core.review_models import ClientJudgment
 from benchmarks.datasets import read_records, sha256, unique_by_id, write_json
@@ -31,6 +32,15 @@ class ClientSubmission(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
     judgment: ClientJudgment
+
+
+class ClientProfile(BaseModel):
+    """Record who made the decisions; never infer a model name from the host."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    application: str = Field(min_length=1, max_length=200)
+    model_id: str | None = Field(default=None, min_length=1, max_length=200)
+    execution_mode: Literal["interactive", "api", "unspecified"] = "unspecified"
+    context_description: str = Field(min_length=1, max_length=3000)
 
 
 def now():
@@ -122,10 +132,12 @@ def load_batch(batch):
     return manifest, packets
 
 
-async def submit(batch, judgments_path, destination):
+async def submit(batch, judgments_path, destination, client_profile_path=None):
     _, packets = load_batch(batch)
     batch_hash = sha256(batch / "manifest.json")
     content = judgments_path.read_bytes()
+    profile = (ClientProfile.model_validate_json(client_profile_path.read_bytes()) if client_profile_path else
+               ClientProfile(application="unspecified", context_description="Client identity was not recorded."))
     judgments = unique_by_id([ClientSubmission.model_validate_json(line) for line in content.decode("utf-8").splitlines() if line.strip()])
     if set(judgments) != {packet["id"] for packet in packets}:
         raise ValueError("Require exactly one client submission per input case")
@@ -135,6 +147,7 @@ async def submit(batch, judgments_path, destination):
                 "batch_manifest_sha256": batch_hash,
                 "judgments_sha256": sha256(destination / "judgments.jsonl"), "code": _code_record(),
                 "batch_script_sha256": sha256(Path(__file__))}
+    manifest["client"] = profile.model_dump(mode="json")
     try:
         with (destination / "transcript.jsonl").open("x", encoding="utf-8") as log, \
                 (destination / "predictions.jsonl").open("x", encoding="utf-8") as predictions:
@@ -192,15 +205,23 @@ def score(batch, submission, gold_path, destination):
     mapping = {"SUPPORTED": "SUPPORT", "CONTRADICTED": "CONTRADICT", "NOT_ENOUGH_EVIDENCE": "NEI", "UNCERTAIN": "ABSTAIN"}
     table = {label: {state: 0 for state in ("SUPPORT", "CONTRADICT", "NEI", "ABSTAIN", "ERROR")}
              for label in ("SUPPORT", "CONTRADICT", "NEI")}
+    cases = []
     for row in rows:
         prediction = "ERROR" if row["error"] else mapping[row["record"]["judgment"]["conclusion"]]
         table[gold[row["id"]].label][prediction] += 1
+        cases.append({"id": row["id"], "gold": gold[row["id"]].label, "prediction": prediction,
+                      "correct": prediction == gold[row["id"]].label, "error": row["error"]})
     correct = sum(table[label][label] for label in table)
     unresolved = sum(values["ABSTAIN"] + values["ERROR"] for values in table.values())
     concrete = sum(values["SUPPORT"] + values["CONTRADICT"] for values in table.values())
     concrete_correct = table["SUPPORT"]["SUPPORT"] + table["CONTRADICT"]["CONTRADICT"]
     nei = sum(values["NEI"] for values in table.values())
+    class_metrics = {label: {"precision": rate(table[label][label], sum(values[label] for values in table.values())),
+                             "recall": rate(table[label][label], sum(table[label].values()))}
+                     for label in table}
     result = {"protocol": "interactive_client_given_source_v1", "total": len(rows), "state_by_gold": table,
+              "client": manifest.get("client", {"application": "unrecorded", "model_id": None}),
+              "class_metrics": class_metrics, "cases": cases,
               "label_agreement": rate(correct, len(rows)),
               "label_coverage": rate(len(rows) - unresolved, len(rows)),
               "support_or_contradict_coverage": rate(concrete, len(rows)),
@@ -229,6 +250,7 @@ def main():
     submission.add_argument("--batch", type=Path, required=True)
     submission.add_argument("--judgments", type=Path, required=True)
     submission.add_argument("--output", type=Path, required=True)
+    submission.add_argument("--client-profile", type=Path, help="JSON with host, model ID (or null), mode and context")
     scoring = commands.add_parser("score")
     scoring.add_argument("--batch", type=Path, required=True)
     scoring.add_argument("--submission", type=Path, required=True)
@@ -238,7 +260,7 @@ def main():
     if args.command == "prepare":
         result = asyncio.run(prepare(args.inputs, args.output, args.dataset_manifest))
     elif args.command == "submit":
-        result = asyncio.run(submit(args.batch, args.judgments, args.output))
+        result = asyncio.run(submit(args.batch, args.judgments, args.output, args.client_profile))
     else:
         result = score(args.batch, args.submission, args.gold, args.output)
     print(json.dumps(result, ensure_ascii=False, indent=2))
