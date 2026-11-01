@@ -52,6 +52,14 @@ class SuggestedRevision(ReviewModel):
     reason: str = Field(min_length=1, max_length=3000)
 
 
+class ClaimFinding(ReviewModel):
+    """The client's reading of one necessary claim part, never a server verdict."""
+    claim_part: str = Field(min_length=1, max_length=3000, description="Exact substring of the original claim")
+    relation: Literal["SUPPORTS", "CONTRADICTS", "NOT_ADDRESSED", "UNCLEAR"]
+    evidence_ids: list[str]
+    reason: str = Field(min_length=1, max_length=3000)
+
+
 class ClientJudgment(ReviewModel):
     conclusion: Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_EVIDENCE", "UNCERTAIN"]
     rationale: str = Field(min_length=1, max_length=6000)
@@ -60,3 +68,4 @@ class ClientJudgment(ReviewModel):
     checks: ReviewChecks
     client_model: str = Field(default="unspecified", min_length=1, max_length=200)
     suggested_revision: SuggestedRevision | None = None
+    findings: list[ClaimFinding] = Field(default_factory=list, max_length=16)
