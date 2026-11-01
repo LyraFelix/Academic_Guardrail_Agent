@@ -62,7 +62,7 @@ async def call(session, name, arguments, transcript):
     return result.structuredContent or json.loads(next(block.text for block in result.content if hasattr(block, "text")))
 
 
-async def prepare(inputs_path, destination):
+async def prepare(inputs_path, destination, dataset_manifest=None):
     destination.mkdir(parents=True, exist_ok=False)
     (destination / "inputs.jsonl").write_bytes(inputs_path.read_bytes())
     inputs = read_records(destination / "inputs.jsonl", InputCase)
@@ -71,6 +71,14 @@ async def prepare(inputs_path, destination):
     manifest = {"status": "incomplete", "started_utc": now(), "count": len(inputs), "processed": 0,
                 "inputs_sha256": sha256(destination / "inputs.jsonl"), "code": _code_record(),
                 "batch_script_sha256": sha256(Path(__file__))}
+    if dataset_manifest is not None:
+        metadata = dataset_manifest.read_bytes()  # Hashes/protocol only, no gold labels.
+        dataset = json.loads(metadata)
+        if dataset["files"]["inputs.jsonl"] != manifest["inputs_sha256"]:
+            raise ValueError("Dataset manifest does not match the input snapshot")
+        manifest.update(expected_gold_sha256=dataset["files"]["gold.jsonl"],
+                        dataset_manifest_sha256=hashlib.sha256(metadata).hexdigest())
+        (destination / "dataset_manifest.json").write_bytes(metadata)
     try:
         with (destination / "transcript.jsonl").open("x", encoding="utf-8") as log, \
                 (destination / "packets.jsonl").open("x", encoding="utf-8") as packets:
@@ -81,6 +89,8 @@ async def prepare(inputs_path, destination):
                     following = packet["next_offset"]
                     while following is not None:
                         page = await call(session, "read_claim_evidence", {"packet_id": packet["packet_id"], "offset": following}, log)
+                        if page["packet_sha256"] != packet["packet_sha256"]:
+                            raise ValueError("Evidence snapshot changed between pages")
                         packet["evidence"].extend(page["evidence"])
                         following = page["next_offset"]
                     packet["next_offset"] = None
@@ -123,7 +133,8 @@ async def submit(batch, judgments_path, destination):
     (destination / "judgments.jsonl").write_bytes(content)
     manifest = {"status": "incomplete", "started_utc": now(), "count": len(packets), "processed": 0, "errors": 0,
                 "batch_manifest_sha256": batch_hash,
-                "judgments_sha256": sha256(destination / "judgments.jsonl"), "code": _code_record()}
+                "judgments_sha256": sha256(destination / "judgments.jsonl"), "code": _code_record(),
+                "batch_script_sha256": sha256(Path(__file__))}
     try:
         with (destination / "transcript.jsonl").open("x", encoding="utf-8") as log, \
                 (destination / "predictions.jsonl").open("x", encoding="utf-8") as predictions:
@@ -131,7 +142,10 @@ async def submit(batch, judgments_path, destination):
                 for packet in packets:
                     try:
                         record = await call(session, "record_claim_review", {"packet_id": packet["packet_id"],
+                                            "expected_packet_sha256": packet["packet_sha256"],
                                             "judgment": judgments[packet["id"]].judgment.model_dump(mode="json")}, log)
+                        if record["packet_sha256"] != packet["packet_sha256"]:
+                            raise ValueError("Recorded evidence differs from the client-reviewed snapshot")
                         row = {"id": packet["id"], "record": record, "error": None}
                     except ValueError as error:
                         row = {"id": packet["id"], "record": None, "error": str(error)}
@@ -151,7 +165,7 @@ async def submit(batch, judgments_path, destination):
 
 
 def score(batch, submission, gold_path, destination):
-    _, packets = load_batch(batch)
+    batch_manifest, packets = load_batch(batch)
     manifest = json.loads((submission / "manifest.json").read_text(encoding="utf-8"))
     if manifest["status"] not in {"completed", "completed_with_errors"}:
         raise ValueError("Incomplete submitted batch")
@@ -164,6 +178,11 @@ def score(batch, submission, gold_path, destination):
             raise ValueError(f"Submission checksum mismatch: {name}")
     rows = [json.loads(line) for line in contents["predictions"].decode("utf-8").splitlines()]
     gold_content = gold_path.read_bytes()  # First gold read in this workflow.
+    gold_hash = hashlib.sha256(gold_content).hexdigest()
+    if not batch_manifest.get("expected_gold_sha256"):
+        raise ValueError("Scoring requires a dataset manifest pinned during preparation")
+    if gold_hash != batch_manifest["expected_gold_sha256"]:
+        raise ValueError("Gold checksum differs from the snapshot pinned before submission")
     gold = unique_by_id([GoldCase.model_validate_json(line) for line in gold_content.decode("utf-8").splitlines()])
     if any(item.label not in {"SUPPORT", "CONTRADICT", "NEI"} or item.expected_state is not None for item in gold.values()):
         raise ValueError("Client pilot requires three-way fact labels")
@@ -178,11 +197,21 @@ def score(batch, submission, gold_path, destination):
         table[gold[row["id"]].label][prediction] += 1
     correct = sum(table[label][label] for label in table)
     unresolved = sum(values["ABSTAIN"] + values["ERROR"] for values in table.values())
+    concrete = sum(values["SUPPORT"] + values["CONTRADICT"] for values in table.values())
+    concrete_correct = table["SUPPORT"]["SUPPORT"] + table["CONTRADICT"]["CONTRADICT"]
+    nei = sum(values["NEI"] for values in table.values())
     result = {"protocol": "interactive_client_given_source_v1", "total": len(rows), "state_by_gold": table,
-              "label_agreement": rate(correct, len(rows)), "resolved_rate": rate(len(rows) - unresolved, len(rows)),
-              "agreement_on_resolved": rate(correct, len(rows) - unresolved),
-              "errors": sum(row["error"] is not None for row in rows), "gold_sha256": hashlib.sha256(gold_content).hexdigest(),
-              "boundary": "client-generated labels; quote validation does not certify semantic correctness; no bare-model comparison"}
+              "label_agreement": rate(correct, len(rows)),
+              "label_coverage": rate(len(rows) - unresolved, len(rows)),
+              "support_or_contradict_coverage": rate(concrete, len(rows)),
+              "agreement_on_support_or_contradict": rate(concrete_correct, concrete),
+              "not_enough_evidence_rate": rate(nei, len(rows)),
+              "abstention_or_error_rate": rate(unresolved, len(rows)),
+              "errors": sum(row["error"] is not None for row in rows), "gold_sha256": gold_hash,
+              "batch_manifest_sha256": sha256(batch / "manifest.json"),
+              "submission_manifest_sha256": sha256(submission / "manifest.json"),
+              "batch_script_sha256": sha256(Path(__file__)),
+              "boundary": "NEI is not support/refutation; client-generated labels; quote validation does not certify semantic correctness; no bare-model comparison"}
     with destination.open("x", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
     return result
@@ -194,6 +223,8 @@ def main():
     preparation = commands.add_parser("prepare")
     preparation.add_argument("--inputs", type=Path, required=True)
     preparation.add_argument("--output", type=Path, required=True)
+    preparation.add_argument("--dataset-manifest", type=Path,
+                             help="Pin the gold checksum without reading labels; required for later scoring")
     submission = commands.add_parser("submit")
     submission.add_argument("--batch", type=Path, required=True)
     submission.add_argument("--judgments", type=Path, required=True)
@@ -205,7 +236,7 @@ def main():
     scoring.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "prepare":
-        result = asyncio.run(prepare(args.inputs, args.output))
+        result = asyncio.run(prepare(args.inputs, args.output, args.dataset_manifest))
     elif args.command == "submit":
         result = asyncio.run(submit(args.batch, args.judgments, args.output))
     else:

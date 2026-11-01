@@ -34,10 +34,12 @@ class ReviewStore:
             json.dump(content, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
 
-    def save_packet(self, packet: ReviewPacket):
+    def save_packet(self, packet: ReviewPacket) -> str:
         content = packet.model_dump(mode="json")
+        digest = content_digest(content)
         self._write_new(self._path(packet.packet_id, "packet"),
-                        {"sha256": content_digest(content), "packet": content})
+                        {"sha256": digest, "packet": content})
+        return digest
 
     def load_packet(self, packet_id: str) -> ReviewPacket:
         saved = json.loads(self._path(packet_id, "packet").read_text(encoding="utf-8"))
@@ -48,11 +50,14 @@ class ReviewStore:
             raise ValueError("Stored packet ID differs from requested ID")
         return packet
 
-    def record(self, packet_id: str, judgment: ClientJudgment) -> dict:
+    def record(self, packet_id: str, judgment: ClientJudgment, expected_packet_sha256: str) -> dict:
         packet = self.load_packet(packet_id)
+        digest = content_digest(packet.model_dump(mode="json"))
+        if digest != expected_packet_sha256:
+            raise ValueError("Stored packet differs from the client-reviewed snapshot")
         record = validate_client_judgment(packet, judgment)
         record.update(review_id=uuid4().hex, recorded_utc=datetime.now(timezone.utc).isoformat(),
-                      packet_sha256=content_digest(packet.model_dump(mode="json")))
+                      packet_sha256=digest)
         path = self._path(record["review_id"], "review")
         self._write_new(path, record)
         return {**record, "record_path": str(path.resolve())}

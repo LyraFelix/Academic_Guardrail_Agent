@@ -15,8 +15,10 @@ score as the answer. Compare subject, relation/polarity/causality, numbers/units
 population/time/conditions, and counterevidence. NOT_ENOUGH_EVIDENCE means the
 provided source does not establish the claim; UNCERTAIN means you cannot resolve
 its meaning or conflicting evidence. Both differ from a false claim.
-Return the structured judgment using exact quotes and evidence IDs. Call
-record_claim_review to validate and persist it. Correct rejected quotes/IDs from
+Return the structured judgment using exact quotes and evidence IDs. Keep the
+packet_sha256 returned by prepare; require all pages to have the same digest.
+Call record_claim_review with that digest as expected_packet_sha256 to validate
+and persist the judgment. Correct rejected quotes/IDs from
 the packet, never invent source text. The server checks evidence links only;
 the semantic conclusion remains a client-model judgment about the provided text.
 Only request human input for missing sources, unresolved ambiguity or a judgment

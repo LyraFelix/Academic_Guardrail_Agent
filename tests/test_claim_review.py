@@ -6,7 +6,7 @@ import pytest
 
 from academic_guardrail.core.claim_review import build_review_packet, evidence_page, validate_client_judgment
 from academic_guardrail.core.review_models import ClientJudgment
-from academic_guardrail.core.review_store import ReviewStore
+from academic_guardrail.core.review_store import ReviewStore, content_digest
 from academic_guardrail.core.models import EvidencePassage, SourceLocation
 
 
@@ -87,10 +87,10 @@ def test_empty_evidence_cannot_support_or_contradict():
 def test_store_preserves_snapshot_and_each_review(tmp_path):
     store = ReviewStore(tmp_path)
     value = packet()
-    store.save_packet(value)
+    digest = store.save_packet(value)
     assert store.load_packet(value.packet_id) == value
-    first = store.record(value.packet_id, judgment(value))
-    second = store.record(value.packet_id, judgment(value))
+    first = store.record(value.packet_id, judgment(value), digest)
+    second = store.record(value.packet_id, judgment(value), digest)
     assert first["review_id"] != second["review_id"]
     assert len(list(tmp_path.glob("*.review.json"))) == 2
     with pytest.raises(FileExistsError):
@@ -115,6 +115,19 @@ def test_missing_reasoning_dimensions_are_rejected():
     del data["checks"]["counterevidence"]
     with pytest.raises(ValueError):
         ClientJudgment.model_validate(data)
+
+
+def test_replaced_packet_with_updated_checksum_cannot_receive_old_judgment(tmp_path):
+    store, value = ReviewStore(tmp_path), packet()
+    digest = store.save_packet(value)
+    path = tmp_path / f"{value.packet_id}.packet.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["packet"]["claim"] = "Treatment increases mortality in adults."
+    data["sha256"] = content_digest(data["packet"])
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="client-reviewed snapshot"):
+        store.record(value.packet_id, judgment(value), digest)
+    assert not list(tmp_path.glob("*.review.json"))
 
 
 def test_repeated_sentences_keep_their_distinct_locations():
@@ -147,7 +160,8 @@ async def test_mcp_client_workflow_uses_stored_packet(monkeypatch, tmp_path):
     stored = ReviewStore(tmp_path / "reviews").load_packet(result["packet_id"])
     page = await mcp_server.read_claim_evidence(result["packet_id"])
     assert page["evidence"][0]["text"] == "Treatment reduces mortality."
-    saved = await mcp_server.record_claim_review(result["packet_id"], judgment(stored))
+    assert page["packet_sha256"] == result["packet_sha256"]
+    saved = await mcp_server.record_claim_review(result["packet_id"], judgment(stored), result["packet_sha256"])
     assert saved["judgment_origin"] == "CLIENT_MODEL"
     assert saved["semantic_judgment_verified"] is False
 

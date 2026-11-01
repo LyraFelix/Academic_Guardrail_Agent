@@ -137,12 +137,13 @@ async def prepare_claim_review(claim: str, reference_text: str = "", citation_st
             packet = await service.prepare_client_review(citation_from_text(citation_str_or_doi), claim, store)
         finally:
             await service.close()
-    ReviewStore().save_packet(packet)
+    digest = ReviewStore().save_packet(packet)
     # Avoid repeating the same finding for every candidate sentence in the
     # client context. Full findings remain in the stored packet.
     findings = {(f.code, f.severity): {"code": f.code, "severity": f.severity, "message": f.message}
                 for f in packet.rule_assessment.findings}
-    return {**evidence_page(packet), "claim": packet.claim, "reference_status": packet.reference_status,
+    return {**evidence_page(packet), "packet_sha256": digest,
+            "claim": packet.claim, "reference_status": packet.reference_status,
             "reference": packet.reference, "blocking_reasons": packet.blocking_reasons,
             "recommended_evidence_ids": packet.recommended_evidence_ids,
             "rule_summary": {"state": packet.rule_assessment.state,
@@ -155,19 +156,22 @@ async def prepare_claim_review(claim: str, reference_text: str = "", citation_st
 async def read_claim_evidence(packet_id: str, offset: int = 0, limit: int = 24) -> dict:
     """继续读取已保存证据包的完整原文句子。按 next_offset 翻页，不重新联网检索。"""
     from academic_guardrail.core.claim_review import evidence_page
-    from academic_guardrail.core.review_store import ReviewStore
-    return evidence_page(ReviewStore().load_packet(packet_id), offset, limit)
+    from academic_guardrail.core.review_store import ReviewStore, content_digest
+    packet = ReviewStore().load_packet(packet_id)
+    return {**evidence_page(packet, offset, limit),
+            "packet_sha256": content_digest(packet.model_dump(mode="json"))}
 
 
 @mcp.tool()
-async def record_claim_review(packet_id: str, judgment: ClientJudgment) -> dict:
+async def record_claim_review(packet_id: str, judgment: ClientJudgment, expected_packet_sha256: str) -> dict:
     """校验证据编号、完整阅读声明和逐字引用，保存客户端模型的结构化语义判断。
 
     SUPPORTED/CONTRADICTED 至少需要一条原文引用；确定结论须声明考虑全部证据。
+    expected_packet_sha256 使用准备证据包时返回的摘要，确保提交时证据没有变化。
     校验通过只表示引用与记录一致，不证明模型推理正确。每次提交生成新记录。
     """
     from academic_guardrail.core.review_store import ReviewStore
-    return ReviewStore().record(packet_id, judgment)
+    return ReviewStore().record(packet_id, judgment, expected_packet_sha256)
 
 
 @mcp.prompt()
