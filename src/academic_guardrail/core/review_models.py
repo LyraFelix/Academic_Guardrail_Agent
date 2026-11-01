@@ -45,6 +45,13 @@ class ReviewChecks(ReviewModel):
     counterevidence: str = Field(min_length=1, max_length=3000)
 
 
+class SuggestedRevision(ReviewModel):
+    """A source-linked drafting suggestion, not verification of the old claim."""
+    text: str = Field(min_length=1, max_length=6000)
+    evidence_ids: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=3000)
+
+
 class ClientJudgment(ReviewModel):
     conclusion: Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_EVIDENCE", "UNCERTAIN"]
     rationale: str = Field(min_length=1, max_length=6000)
@@ -52,3 +59,4 @@ class ClientJudgment(ReviewModel):
     quotes: list[ReviewQuote]
     checks: ReviewChecks
     client_model: str = Field(default="unspecified", min_length=1, max_length=200)
+    suggested_revision: SuggestedRevision | None = None

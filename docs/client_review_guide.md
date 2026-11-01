@@ -2,6 +2,8 @@
 
 这个流程解决的是“本地规则看不懂，就把所有内容交回给人”的问题。已有的大模型客户端继续读取原文、解释语义并提交判断；MCP 负责文献来源、证据组织、引用校验和记录。服务端没有再调用一个模型，也不需要额外模型 API 密钥。
 
+本仓库不自带负责三分类判断的大模型。当前记录的交互式试跑由 **Codex 对话中的助手**作出判断，具体底层模型 ID 未提供。这不是训练 Codex；修改项目代码或提示只会改变客户端获得的证据与工作要求，不会更新客户端模型权重。其他客户端需要独立测量，不能直接沿用这里的分数。
+
 ## 一次实际使用
 
 先按 README 安装并连接 `academic-guardrail-mcp`。更新源码后重启客户端中的 MCP 进程。这个项目仍是一个服务，现有七个工具和一个 `review_claim_workflow` 提示。
@@ -52,11 +54,18 @@ record_claim_review(packet_id, judgment, expected_packet_sha256)
     "scope": "提供的材料没有不同人群或时间限定。",
     "counterevidence": "本证据包没有其他支持 90% 的段落。"
   },
-  "client_model": "填写客户端实际知道的模型名；不知道则 unspecified"
+  "client_model": "填写客户端和已知模型名；未知模型版本应明确写 unavailable",
+  "suggested_revision": {
+    "text": "Treatment reduces mortality by 10%.",
+    "evidence_ids": ["e1"],
+    "reason": "按给定原文修正数值。"
+  }
 }
 ```
 
 服务端遇到假引用、未知编号、缺少必要检查、遗漏阅读声明或证据快照变化时会返回工具错误。客户端应按错误修正输入，不能在引用未通过时向用户宣称已经完成保存。
+
+`suggested_revision` 是可选的、有来源的改写建议。当原论断范围过大或比较对象不对，而原文支持一个更窄的说法时，可以给出建议；没有相关结果时应省略。所有建议证据 ID 必须已阅读并有逐字引用。建议不改变原论断的结论，也不计入原论断核验成功数，服务端仍返回 `suggested_revision_semantically_verified=false`。
 
 ## 怎样解释结果
 
@@ -113,7 +122,7 @@ python -m scripts.client_review_batch prepare --inputs benchmarks/data/client_pi
 此时让客户端只读取 `packets.jsonl`，独立写出 `judgments.jsonl`；每行是 `{"id": "配对 ID", "judgment": {...}}`。**这个步骤需要真正的模型判断，脚本不会自动产生答案。** 模型不能读取 gold 或含答案的结果文件。自己填写固定答案只算接口测试。
 
 ```powershell
-python -m scripts.client_review_batch submit --batch benchmarks/runs/client_batch_01 --judgments benchmarks/runs/client_judgments_01.jsonl --output benchmarks/runs/client_submission_01
+python -m scripts.client_review_batch submit --batch benchmarks/runs/client_batch_01 --judgments benchmarks/runs/client_judgments_01.jsonl --client-profile benchmarks/runs/client_profile.json --output benchmarks/runs/client_submission_01
 python -m scripts.client_review_batch score --batch benchmarks/runs/client_batch_01 --submission benchmarks/runs/client_submission_01 --gold benchmarks/data/client_pilot_01/gold.jsonl --output benchmarks/runs/client_metrics_01.json
 
 # 下面是脚本预设答案的工程验收，不是模型实验。
@@ -121,6 +130,27 @@ python scripts/validate_client_review.py --output-dir benchmarks/runs/client_tra
 ```
 
 计分输出明确分开：支持/反驳覆盖率、这些结论的标签一致率、NEI 比例、弃判/错误比例和全样本标签一致率。`label_coverage` 包含 NEI，只说明做出了三分类标签，不能称为核验完成率。原始工具请求/响应、预测、代码哈希和数据哈希均保留；错误样本仍占分母。
+
+提交前创建 `client_profile.json`，例如：
+
+```json
+{
+  "application": "Codex",
+  "model_id": null,
+  "execution_mode": "interactive",
+  "context_description": "当前对话助手；底层模型版本和采样参数不可得；未给判断过程提供本批 gold。"
+}
+```
+
+这个身份记录随评分保存。`class_metrics` 分别给出三类的 precision/recall 与分子分母；`cases` 保留每条预测、gold 和错误。未知模型不能根据客户端名字猜测。未传身份文件的旧流程仍能运行，但会显式标为 unspecified。
+
+扩大样本可使用单独的分层准备入口：
+
+```powershell
+python -m scripts.prepare_client_evaluation --archive benchmarks/data/scifact.tar.gz --prior-inputs benchmarks/data/client_pilot_01/inputs.jsonl --output benchmarks/data/client_evaluation_01
+```
+
+默认生成 36 条发现组和 24 条后续验证组，各自三类均衡。抽样明确使用标签进行分层；判定输入不包含标签。它排除旧样本论断和文献，两个新组之间也不重复 claim ID 或 document ID，但不保证语义相近的论断族完全隔离。先完成发现组、固定修改，再读取验证组；不要用验证组答案改同一轮结果。均衡样本的 NEI 占比是人为设计的，不能当作真实稿件的发生率。
 
 可以重放已保存预测的计分；重新调用另一个客户端模型不保证得到同样结论。当前客户端的模型 ID、提示上下文和推理配置如果不可得，必须如实记录，而不是填一个猜测值。服务端无联网请求也不意味着客户端推理没有成本。
 

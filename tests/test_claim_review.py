@@ -59,6 +59,54 @@ def test_valid_quotes_do_not_certify_model_reasoning():
     assert result["quotes"][0]["location"]["char_start"] == 100
 
 
+def test_numeric_comparison_abbreviation_keeps_both_sides_and_offsets():
+    text = "The mean was 43 vs. 33 units (P = 0.01). A second result follows."
+    source = EvidencePassage(text=text, source_kind="LOCAL_FULLTEXT", location=SourceLocation(
+        file_path="study.txt", char_start=50, char_end=50 + len(text)))
+    value = build_review_packet("The mean was higher.", [source])
+    assert len(value.evidence) == 2
+    assert value.evidence[0].text == "The mean was 43 vs. 33 units (P = 0.01)."
+    for evidence in value.evidence:
+        start = evidence.location.char_start - 50
+        end = evidence.location.char_end - 50
+        assert text[start:end] == evidence.text
+
+
+def test_supported_revision_does_not_change_original_claim_conclusion():
+    value = packet()
+    revision = {"text": "Treatment reduces mortality in the studied adults.",
+                "evidence_ids": ["e1", "e2"], "reason": "Restrict the statement to the observed population."}
+    candidate = judgment(value, conclusion="NOT_ENOUGH_EVIDENCE", suggested_revision=revision,
+                         quotes=[{"evidence_id": item.id, "quote": item.text} for item in value.evidence])
+    result = validate_client_judgment(value, candidate)
+    assert result["judgment"]["conclusion"] == "NOT_ENOUGH_EVIDENCE"
+    assert result["judgment"]["suggested_revision"]["evidence_ids"] == ["e1", "e2"]
+    assert result["suggested_revision_semantically_verified"] is False
+
+
+@pytest.mark.parametrize("ids", [["e99"], ["e1", "e1"], ["e2"]])
+def test_revision_requires_distinct_reviewed_and_quoted_evidence(ids):
+    value = packet()
+    candidate = judgment(value, suggested_revision={"text": "A narrower statement.",
+                          "evidence_ids": ids, "reason": "Narrow the scope."})
+    with pytest.raises(ValueError):
+        validate_client_judgment(value, candidate)
+
+
+def test_revision_cannot_bypass_empty_evidence_or_partial_read():
+    value = packet()
+    candidate = judgment(value, conclusion="UNCERTAIN", reviewed_evidence_ids=["e1"],
+                         suggested_revision={"text": "Treatment reduces mortality.",
+                                             "evidence_ids": ["e1"], "reason": "Use the available result."})
+    with pytest.raises(ValueError):
+        validate_client_judgment(value, candidate)
+    empty = build_review_packet("A claim.", [])
+    candidate = judgment(value, conclusion="NOT_ENOUGH_EVIDENCE", reviewed_evidence_ids=[], quotes=[],
+                         suggested_revision={"text": "An invented replacement.", "evidence_ids": ["e1"], "reason": "No source."})
+    with pytest.raises(ValueError):
+        validate_client_judgment(empty, candidate)
+
+
 @pytest.mark.parametrize("problem", ["invented_quote", "unknown_id", "partial_read", "duplicate_read", "no_quote", "quote_not_read"])
 def test_invalid_submissions_are_rejected(problem):
     value = packet()

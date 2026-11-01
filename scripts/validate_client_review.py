@@ -69,16 +69,23 @@ async def validate(destination: Path):
                         "checks": {"subject": "Same treatment.", "relation": "Both describe mortality reduction.",
                                    "numbers": "90% differs from 10%.", "scope": "No different population or time is stated.",
                                    "counterevidence": "The remaining sentences are unrelated background."},
-                        "client_model": "scripted validation fixture, not an LLM"}
+                        "client_model": "scripted validation fixture, not an LLM",
+                        "suggested_revision": {"text": "Treatment reduces mortality by 10%.",
+                                               "evidence_ids": ["e1"], "reason": "Use the source's numerical value."}}
             binding = {"packet_id": prepared["packet_id"], "expected_packet_sha256": prepared["packet_sha256"]}
             saved = await call("record_claim_review", {**binding, "judgment": judgment})
             assert saved["validation_status"] == "EVIDENCE_LINKS_VALID"
             assert saved["semantic_judgment_verified"] is False
             assert saved["judgment"]["conclusion"] == "CONTRADICTED"
+            assert saved["judgment"]["suggested_revision"]["evidence_ids"] == ["e1"]
+            assert saved["suggested_revision_semantically_verified"] is False
             invented = {**judgment, "quotes": [{"evidence_id": "e1", "quote": "Treatment reduces mortality by 90%."}]}
             await call("record_claim_review", {**binding, "judgment": invented}, should_fail=True)
             await call("record_claim_review", {**binding, "expected_packet_sha256": "0" * 64,
                                                 "judgment": judgment}, should_fail=True)
+            bad_revision = {**judgment, "suggested_revision": {"text": "Unsupported rewrite.",
+                            "evidence_ids": ["e2"], "reason": "Refers to a unit without a submitted quote."}}
+            await call("record_claim_review", {**binding, "judgment": bad_revision}, should_fail=True)
             await call("read_claim_evidence", {"packet_id": "../outside"}, should_fail=True)
             blocked = await call("prepare_claim_review", {"claim": "Treatment reduces mortality.",
                                                           "citation_str_or_doi": "10.1038/nature12968", "offline": True})
@@ -87,7 +94,7 @@ async def validate(destination: Path):
     assert json.loads(attempts.read_text(encoding="utf-8")) == []
     assert len(list((destination / "stored").glob("*.review.json"))) == 1
     result = {"validation": "scripted_mcp_workflow_not_llm_accuracy", "mcp_tools": len(names),
-              "successful_recorded_judgments": 1, "rejected_invalid_calls": 3,
+              "successful_recorded_judgments": 1, "rejected_invalid_calls": 4,
               "reference_retraction_precedence": True, "paginated_evidence": 27,
               "offline_boundary_attempts": 0, "live_model_requests": 0}
     save(destination / "validation.json", result)

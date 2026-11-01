@@ -59,7 +59,7 @@ def sentence_units(text: str, *, split_semicolons: bool = True) -> list[TextUnit
     punctuation = r"[。！？!?；;]" if split_semicolons else r"[。！？!?]"
     for match in re.finditer(punctuation + r"|\.(?!\d)(?=\s|$)|\n\s*\n", text):
         prefix = text[:match.start()]
-        if match.group() == "." and re.search(r"\b(?:Dr|Mr|Ms|Mrs|Prof|e\.g|i\.e)$", prefix, re.I):
+        if match.group() == "." and re.search(r"\b(?:Dr|Mr|Ms|Mrs|Prof|e\.g|i\.e|vs)$", prefix, re.I):
             continue
         boundaries.append(match.end())
     boundaries.append(len(text))

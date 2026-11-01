@@ -168,6 +168,7 @@ async def record_claim_review(packet_id: str, judgment: ClientJudgment, expected
 
     SUPPORTED/CONTRADICTED 至少需要一条原文引用；确定结论须声明考虑全部证据。
     expected_packet_sha256 使用准备证据包时返回的摘要，确保提交时证据没有变化。
+    可选 suggested_revision 给出有引用的改写建议；不改变原论断结论，也不认证改写语义。
     校验通过只表示引用与记录一致，不证明模型推理正确。每次提交生成新记录。
     """
     from academic_guardrail.core.review_store import ReviewStore
@@ -182,7 +183,7 @@ def review_claim_workflow(claim: str, citation: str = "") -> str:
     # User text is serialized as data, separate from the workflow instructions.
     return (REVIEW_INSTRUCTIONS + "\nFirst call prepare_claim_review with the supplied claim and citation, "
             "or with source text the user supplied. Follow next_offset with read_claim_evidence. "
-            "After recording, report the client conclusion, exact quotes, source scope and remaining limitations.\n"
+            "After recording, report the client conclusion, exact quotes, source scope, any suggested revision, and remaining limitations.\n"
             "Task data: " + json.dumps({"claim": claim, "citation": citation}, ensure_ascii=False))
 
 

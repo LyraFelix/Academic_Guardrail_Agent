@@ -15,6 +15,20 @@ score as the answer. Compare subject, relation/polarity/causality, numbers/units
 population/time/conditions, and counterevidence. NOT_ENOUGH_EVIDENCE means the
 provided source does not establish the claim; UNCERTAIN means you cannot resolve
 its meaning or conflicting evidence. Both differ from a false claim.
+Evaluate the original claim, including each required qualifier and each part of
+a compound claim. Recognize ordinary paraphrases and established entity aliases,
+but do not invent an unreported entity, experiment, endpoint or time period.
+Compare the same metric and comparator: a concentration is not a clearance rate,
+and lack of a significant difference is not proof of equivalence. A finding at
+one time point does not establish 'throughout'. Preserve causal direction.
+Read relative contrasts such as 'primarily A, not B' as comparisons of predominance;
+mere presence in B does not refute predominance in A. Distinguish this from an
+absolute statement that B never occurs. If a term has two plausible meanings that
+change the verdict, explain the ambiguity instead of silently choosing one.
+When useful, provide suggested_revision with a narrower source-supported text,
+evidence_ids and reason; include exact quotes for every referenced ID. Do not
+change the original claim's conclusion just because its revision is supportable.
+If the source lacks a useful related result, omit the revision and say what is missing.
 Return the structured judgment using exact quotes and evidence IDs. Keep the
 packet_sha256 returned by prepare; require all pages to have the same digest.
 Call record_claim_review with that digest as expected_packet_sha256 to validate
@@ -92,9 +106,18 @@ def validate_client_judgment(packet: ReviewPacket, judgment: ClientJudgment) -> 
         location = locate_excerpt(passage, quote.quote)
         quotes.append({**quote.model_dump(), "source_kind": item.source_kind,
                        "location": location.model_dump() if location else None})
+    revision = judgment.suggested_revision
+    if revision is not None:
+        ids = set(revision.evidence_ids)
+        quoted = {quote.evidence_id for quote in judgment.quotes}
+        if packet.blocking_reasons or reviewed != set(indexed):
+            raise ValueError("A revision needs eligible evidence and complete declared review")
+        if len(ids) != len(revision.evidence_ids) or not ids <= quoted:
+            raise ValueError("Revision evidence IDs must be distinct, reviewed and quoted")
     return {"packet_id": packet.packet_id, "judgment_origin": "CLIENT_MODEL",
             "judgment": judgment.model_dump(mode="json"), "quotes": quotes,
             "validation_status": "EVIDENCE_LINKS_VALID", "semantic_judgment_verified": False,
+            "suggested_revision_semantically_verified": False,
             "coverage_basis": "client_declared_evidence_ids_not_observed_cognition",
             "reference_status": packet.reference_status,
             "scope": "provided_source_text_only", "blocking_reasons": packet.blocking_reasons}
