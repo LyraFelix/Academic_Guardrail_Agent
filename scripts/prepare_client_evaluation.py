@@ -7,10 +7,11 @@ Only input files are shown to the judging client; gold remains separate.
 import argparse
 from collections import Counter
 import hashlib
+import io
 from pathlib import Path
 import tarfile
 
-from benchmarks.datasets import SCIFACT_SOURCE, _archive_records, _raw_index, _write_dataset, read_records, sha256, write_json
+from benchmarks.datasets import SCIFACT_SOURCE, _archive_records, _raw_index, _write_dataset, sha256, unique_by_id, write_json
 from benchmarks.schema import GoldCase, InputCase
 
 LABELS = ("SUPPORT", "CONTRADICT", "NEI")
@@ -43,12 +44,15 @@ def select_partition(candidates, per_class, partition, used_claims, used_documen
 
 
 def prepare(archive_path, prior_inputs, destination, discovery_per_class=12, validation_per_class=8):
-    if sha256(archive_path) != SCIFACT_SOURCE["sha256"]:
+    archive_bytes = archive_path.read_bytes()
+    if hashlib.sha256(archive_bytes).hexdigest() != SCIFACT_SOURCE["sha256"]:
         raise ValueError("Official archive checksum mismatch")
-    previous = read_records(prior_inputs, InputCase)
+    prior_bytes = prior_inputs.read_bytes()
+    previous = [InputCase.model_validate_json(line) for line in prior_bytes.decode("utf-8").splitlines() if line.strip()]
+    unique_by_id(previous)
     used_claims = {row.claim_id for row in previous}
     used_documents = {row.doc_id for row in previous}
-    with tarfile.open(archive_path, "r:gz") as archive:
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as archive:
         corpus = _raw_index(_archive_records(archive, "data/corpus.jsonl"), "doc_id")
         claims = _raw_index(_archive_records(archive, "data/claims_train.jsonl"), "id")
     candidates, gold_by_pair = [], {}
@@ -67,10 +71,11 @@ def prepare(archive_path, prior_inputs, destination, discovery_per_class=12, val
     for name, quota in (("discovery", discovery_per_class), ("validation", validation_per_class)):
         partitions[name] = select_partition(candidates, quota, name, used_claims, used_documents)
     destination.mkdir(parents=True, exist_ok=False)
+    (destination / "prior_inputs.jsonl").write_bytes(prior_bytes)
     source = {**SCIFACT_SOURCE, "name": "SciFact public train balanced client diagnostic", "split": "train",
               "sampling": {"seed": SEED, "selection_uses_gold_labels": True,
                            "selection": "seeded order within class quotas; unique claims and documents across partitions",
-                           "prior_inputs_sha256": sha256(prior_inputs), "prior_pairs": len(previous)}}
+                           "prior_inputs_sha256": hashlib.sha256(prior_bytes).hexdigest(), "prior_pairs": len(previous)}}
     for name, rows in partitions.items():
         inputs = [InputCase(id=f"{cid}:{did}", claim_id=cid, doc_id=did,
                             claim=claims[int(cid)]["claim"], sentences=corpus[int(did)]["abstract"])
@@ -81,7 +86,7 @@ def prepare(archive_path, prior_inputs, destination, discovery_per_class=12, val
     write_json(destination / "selection.json", {"source": source,
                "partitions": {name: {"pairs": len(rows), "manifest_sha256": sha256(destination / name / "manifest.json")}
                               for name, rows in partitions.items()}})
-    print("Prepared 36 discovery and 24 validation pairs by default; see manifests for actual sizes. Gold labels not printed.")
+    print(f"Prepared {len(partitions['discovery'])} discovery and {len(partitions['validation'])} validation pairs. Gold labels not printed.")
 
 
 if __name__ == "__main__":
