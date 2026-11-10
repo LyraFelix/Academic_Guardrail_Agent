@@ -96,7 +96,7 @@ Files: `scripts/run_local_followup_evaluation.py`, `docs/local_followup_guide.md
 - [x] Independent specification and code-quality review; fix actionable findings.
 - [x] Full test suite once integration is stable, actual offline MCP entrypoint, original-checkout verification and wheel build.
 - [x] Chinese reading guide, runnable example, honest result report and updated README/CONTEXT.
-- [ ] Focused Felix-authored commits on `local-evidence-followup`, normal fast-forward/push of original master as previously authorized.
+- [x] Focused Felix-authored commits on `local-evidence-followup`, normal fast-forward/push of original master as previously authorized.
 - [x] Research worklog and finding; preserve unrelated modifications already present in the research workspace.
 
 ## Execution
@@ -104,3 +104,9 @@ Files: `scripts/run_local_followup_evaluation.py`, `docs/local_followup_guide.md
 Interpreter: `D:/Anaconda/envs/pytorch/python.exe`. Existing dependency overlay: `D:/Internship/Academic code/audit_guardrail_20261019/deps`. Work checkout: `D:/Internship/Academic code/guardrail_local_followup`. Evidence root: `D:/Internship/Academic code/audit_guardrail_20261110_local_followup`.
 
 Tests use explicit writable TEMP/TMP, `PYTHONDONTWRITEBYTECODE=1`, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` and `-p pytest_asyncio.plugin`. Example focused command: `python -m pytest tests/test_local_followup.py tests/test_local_evidence.py tests/test_followup_report.py -q -p pytest_asyncio.plugin`. Baseline is `5acfd012b64189278d442f428dcd8ed8433c64d3`; historical 376-test pass and paired results are not fresh validation for this change.
+
+## Completion evidence
+
+Core and evaluation runtime froze at `7108a4be`. The complete suite passed 500 tests in the work checkout and 500 again in the original project; actual MCP transport and the wheel build passed. The completed 45-call comparison yielded ten correct concrete verdicts and five remaining NEI in each final path, with 28.08% fewer input tokens for local follow-up and no paired semantic gain. See `docs/local_followup_results.md` for the sample and scope limits.
+
+The original master was fast-forwarded and normally pushed through results commit `57ae4a3`. The audit root retains both immutable runs, independent reviews, a fifteen-chain combined HTML report and final publication receipts. The research workspace records this session in `docs/worklogs/20261110_guardrail_local_followup.md` and finding F084 without staging unrelated research changes.
