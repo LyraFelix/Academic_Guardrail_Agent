@@ -86,18 +86,18 @@ Files: `core/followup_report.py`, existing reporter entrypoint if useful, `tests
 
 Files: `scripts/run_local_followup_evaluation.py`, `docs/local_followup_guide.md`, `docs/local_followup_results.md`; raw material stays outside Git.
 
-- [ ] Freeze 3 development papers / 9 authored source-specific claims and 2 validation papers / 6 claims, if source quality supports this scope. Preserve original PDFs, canonical local text, provenance, hashes, independent gold and ambiguity notes.
-- [ ] Use the existing isolated Codex CLI adapter with an explicit model and one shared initial abstract judgment. For unresolved cases execute the actual MCP query and rejudge; compare with the same client seeing the full local paper under a two-call budget. Abstract-only is a diagnostic baseline, not a fair full-workflow competitor.
-- [ ] Freeze protocol/prompts/code before model judgments and read the corresponding gold only after results are saved. Keep all failures and NEI in denominators. No model answer repair/retry, no claim of human gold or natural benchmark.
-- [ ] Report correct concrete judgments, false conclusions, remaining gaps, quote/source validity, costs and paired differences. Separate abstract and full-text reference judgments. Do not infer gains merely from changing NEI to a definite label.
+- [x] Freeze 3 development papers / 9 authored source-specific claims and 2 validation papers / 6 claims, if source quality supports this scope. Preserve original PDFs, canonical local text, provenance, hashes, independent gold and ambiguity notes.
+- [x] Use the existing isolated Codex CLI adapter with an explicit model and one shared initial abstract judgment. For unresolved cases execute the actual MCP query and rejudge; compare with the same client seeing the full local paper under a two-call budget. Abstract-only is a diagnostic baseline, not a fair full-workflow competitor.
+- [x] Freeze protocol/prompts/code before model judgments and read the corresponding gold only after results are saved. Keep all failures and NEI in denominators. No model answer repair/retry, no claim of human gold or natural benchmark.
+- [x] Report correct concrete judgments, false conclusions, remaining gaps, quote/source validity, costs and paired differences. Separate abstract and full-text reference judgments. Do not infer gains merely from changing NEI to a definite label.
 
 ## Task 6 — Review, release and learning records
 
-- [ ] Independent specification and code-quality review; fix actionable findings.
-- [ ] Full test suite once integration is stable, actual offline MCP entrypoint, original-checkout verification and wheel build.
-- [ ] Chinese reading guide, runnable example, honest result report and updated README/CONTEXT.
+- [x] Independent specification and code-quality review; fix actionable findings.
+- [x] Full test suite once integration is stable, actual offline MCP entrypoint, original-checkout verification and wheel build.
+- [x] Chinese reading guide, runnable example, honest result report and updated README/CONTEXT.
 - [ ] Focused Felix-authored commits on `local-evidence-followup`, normal fast-forward/push of original master as previously authorized.
-- [ ] Research worklog and finding; preserve unrelated modifications already present in the research workspace.
+- [x] Research worklog and finding; preserve unrelated modifications already present in the research workspace.
 
 ## Execution
 
