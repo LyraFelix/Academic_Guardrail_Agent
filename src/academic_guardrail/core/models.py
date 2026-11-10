@@ -194,6 +194,7 @@ class PaperRecord(BaseModel):
     year: Optional[int] = None            # 发表年份
     abstract: str = ""                    # 自动提取到的 Abstract / 摘要
     fulltext: str = ""                    # 提取到的原文全文本
+    source_sha256: Optional[str] = None   # Exact raw bytes parsed; absent in legacy records.
     doi: Optional[str] = None
     doi_candidates: List[str] = Field(default_factory=list)
     abstract_location: Optional[SourceLocation] = None

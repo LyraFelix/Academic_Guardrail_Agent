@@ -60,6 +60,14 @@ class ClaimFinding(ReviewModel):
     reason: str = Field(min_length=1, max_length=3000)
 
 
+class MissingEvidence(ReviewModel):
+    """The client's question for a bounded source lookup, not an inferred fact."""
+    kind: Literal["ENTITY_MAPPING", "RESULT", "POPULATION", "COMPARATOR", "TIME", "OTHER"]
+    claim_part: str = Field(min_length=1, max_length=3000)
+    question: str = Field(min_length=1, max_length=1500)
+    search_terms: list[str] = Field(min_length=1, max_length=6)
+
+
 class ClientJudgment(ReviewModel):
     conclusion: Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_EVIDENCE", "UNCERTAIN"]
     rationale: str = Field(min_length=1, max_length=6000)
@@ -69,3 +77,4 @@ class ClientJudgment(ReviewModel):
     client_model: str = Field(default="unspecified", min_length=1, max_length=200)
     suggested_revision: SuggestedRevision | None = None
     findings: list[ClaimFinding] = Field(default_factory=list, max_length=16)
+    missing_evidence: list[MissingEvidence] = Field(default_factory=list, max_length=4)

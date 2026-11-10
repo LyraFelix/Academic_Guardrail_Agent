@@ -61,7 +61,7 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 
 ## MCP 使用
 
-本项目实现的是 **一个 MCP Server**，向客户端注册七个工具和一个工作流提示。工具是同一个服务提供的不同操作，不是七个 MCP。
+本项目实现的是 **一个 MCP Server**，向客户端注册十个工具和一个工作流提示。工具是同一个服务提供的不同操作，不是十个 MCP。
 
 | 工具 | 用途 |
 | --- | --- |
@@ -72,6 +72,9 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 | `prepare_claim_review` | 解析文献或接收原文，保存供客户端判断的证据包 |
 | `read_claim_evidence` | 按页继续读取同一证据快照 |
 | `record_claim_review` | 校验快照摘要、证据编号和逐字引用，保存客户端判断 |
+| `prepare_local_claim_review` | 匹配一份本地论文，保存真实摘要或全文证据 |
+| `follow_up_local_claim` | 根据已记录的缺口，在同一篇论文中定向补查一次，保留原证据 |
+| `generate_claim_review_report` | 将选定判断及补查前后的证据导出为 HTML |
 
 MCP 客户端可以启动源码安装后生成的命令：
 
@@ -88,6 +91,8 @@ MCP 客户端可以启动源码安装后生成的命令：
 原有四个工具及 `prepare_claim_review` 支持 `offline: true`；读取和记录证据包始终只访问本地。文献核验和审计支持 `detail` 为 `compact`、`detailed`、`debug`。服务端离线不意味着客户端云模型离线，客户端模型与其他在线工具由宿主配置控制。
 
 使用 `review_claim_workflow` 提示，或让客户端依次完成“准备证据 → 读取全部分页 → 检查主体、关系、数字、范围和反证 → 记录结论”。记录时将准备结果的 `packet_sha256` 传为 `expected_packet_sha256`。规则返回复核或证据不足时，客户端应继续分析可用原文。完整示例和源码阅读顺序见[客户端判断导读](docs/client_review_guide.md)。
+
+对于本地论文，现在可以继续完成“说明具体缺口 → 在同一原文件中补查一次 → 结合新旧证据再判断 → 展示前后结果”。报告保留原判断、检索词、逐字引文、位置和文件状态；来源变化会阻止保存新判断，仍未解决的缺口会明确显示。三个新工具只处理本地文件，不调用模型 API。可运行示例和阅读顺序见[本地补查导读](docs/local_followup_guide.md)。
 
 客户端给出 `SUPPORTED`、`CONTRADICTED`、`NOT_ENOUGH_EVIDENCE` 或 `UNCERTAIN`。服务端的 `EVIDENCE_LINKS_VALID` 仅说明引用与证据一致，`semantic_judgment_verified` 始终为 false。原 CLI/HTML 报告仍展示规则结果；客户端语义判断保存在单独 JSON 记录中，并由客户端向用户汇报。
 

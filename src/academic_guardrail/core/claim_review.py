@@ -55,6 +55,21 @@ def evidence_page(packet: ReviewPacket, offset: int = 0, limit: int = 24) -> dic
             "next_offset": following if following < len(packet.evidence) else None}
 
 
+def packet_response(packet: ReviewPacket, digest: str) -> dict:
+    """The same compact, paginated view is used by initial and follow-up tools."""
+    findings = {(finding.code, finding.severity): {
+        "code": finding.code, "severity": finding.severity, "message": finding.message,
+    } for finding in packet.rule_assessment.findings}
+    return {**evidence_page(packet), "packet_sha256": digest,
+            "claim": packet.claim, "reference_status": packet.reference_status,
+            "reference": packet.reference, "blocking_reasons": packet.blocking_reasons,
+            "recommended_evidence_ids": packet.recommended_evidence_ids,
+            "rule_summary": {"state": packet.rule_assessment.state,
+                             "primary_excerpt": packet.rule_assessment.evidence_text,
+                             "findings": list(findings.values())},
+            "instructions": packet.instructions}
+
+
 def validate_client_judgment(packet: ReviewPacket, judgment: ClientJudgment) -> dict:
     """Check the declared coverage and literal quotes, not semantic correctness."""
     indexed = {item.id: item for item in packet.evidence}
@@ -78,6 +93,14 @@ def validate_client_judgment(packet: ReviewPacket, judgment: ClientJudgment) -> 
         quotes.append({**quote.model_dump(), "source_kind": item.source_kind,
                        "location": location.model_dump() if location else None})
     _validate_findings(packet, judgment)
+    for gap in judgment.missing_evidence:
+        if gap.claim_part not in packet.claim:
+            raise ValueError("Missing-evidence claim_part must be an exact substring of the original claim")
+        terms = [term.strip() for term in gap.search_terms]
+        if any(not term or len(term) > 100 or not any(char.isalnum() for char in term) for term in terms):
+            raise ValueError("Search terms must contain between 1 and 100 characters")
+        if len({term.casefold() for term in terms}) != len(terms):
+            raise ValueError("Missing-evidence search terms must be distinct")
     revision = judgment.suggested_revision
     if revision is not None:
         ids = set(revision.evidence_ids)

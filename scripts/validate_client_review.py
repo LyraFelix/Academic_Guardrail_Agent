@@ -33,7 +33,8 @@ async def validate(destination: Path):
             listing = await session.list_tools()
             names = {tool.name for tool in listing.tools}
             expected = {"verify_single_citation", "check_paper_retraction", "audit_document_claims",
-                        "generate_audit_html_report", "prepare_claim_review", "read_claim_evidence", "record_claim_review"}
+                        "generate_audit_html_report", "prepare_claim_review", "read_claim_evidence", "record_claim_review",
+                        "prepare_local_claim_review", "follow_up_local_claim", "generate_claim_review_report"}
             assert names == expected
             save(destination / "tools.json", listing.model_dump(mode="json"))
             prompts = await session.list_prompts()

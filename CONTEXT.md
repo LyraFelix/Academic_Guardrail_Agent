@@ -13,6 +13,7 @@ This project provides citation metadata lookup, source-backed retraction alerts,
 - Offline mode does not initialize online providers or embedding models. `--refs-dir` alone does not enable offline mode.
 - The built-in retraction index has three historical demo records. It is not complete or automatically synchronized.
 - The client model supplies semantic conclusions. `prepare_claim_review` / `read_claim_evidence` / `record_claim_review` preserve source evidence, check its digest and exact quotes, and append records. `EVIDENCE_LINKS_VALID` is mechanical validation, never semantic certification. There is no server-side model API.
+- Local follow-up adds three tools to the same server (ten total): `prepare_local_claim_review`, `follow_up_local_claim`, `generate_claim_review_report`. A recorded unresolved judgment can supply a bounded `missing_evidence` gap for one literal lookup in the same unchanged local source. Original evidence and record IDs remain intact. Separate checked context files bind the source and parent review while preserving legacy packet v1 serialization. HTML reports compare saved judgments and show current source status; the client still supplies every semantic conclusion. Read `docs/local_followup_guide.md` before changing this workflow.
 - Evidence coverage is a client declaration, not proof that a model considered every sentence. Local reference extraction can already have truncated source units. Legacy HTML remains rule-only; client results are saved separately.
 
 ## Development

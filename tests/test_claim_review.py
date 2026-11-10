@@ -21,7 +21,8 @@ def judgment(value, **updates):
     data = {
         "conclusion": "SUPPORTED", "rationale": "The provided text reports the effect in adults.",
         "reviewed_evidence_ids": [item.id for item in value.evidence],
-        "quotes": [{"evidence_id": value.evidence[0].id, "quote": "Treatment reduces mortality."}],
+        "quotes": ([{"evidence_id": value.evidence[0].id, "quote": "Treatment reduces mortality."}]
+                   if value.evidence else []),
         "checks": {"subject": "Same treatment.", "relation": "Both describe reduction.",
                    "numbers": "No numerical comparison.", "scope": "Adults only.",
                    "counterevidence": "No opposing statement in the provided text."},

@@ -6,6 +6,7 @@ to avoid maintaining two separate PDF dependencies.
 """
 
 import logging
+from io import BytesIO
 from typing import List
 
 logger = logging.getLogger(__name__)
@@ -33,17 +34,17 @@ class PDFTextExtractor:
     """
 
     @staticmethod
-    def extract_pages(file_path: str) -> List[str]:
+    def extract_pages(file_path: str, *, source_bytes: bytes | None = None) -> List[str]:
         """Keep every physical page, including pages with no extractable text."""
         if not _HAS_PYPDF:
             raise RuntimeError(
                 "pypdf is required for PDF parsing. "
                 "Install it with: pip install pypdf"
             )
-        reader = pypdf.PdfReader(file_path)
+        reader = pypdf.PdfReader(BytesIO(source_bytes) if source_bytes is not None else file_path)
         return [page.extract_text() or "" for page in reader.pages]
 
     @staticmethod
-    def extract(file_path: str) -> str:
+    def extract(file_path: str, *, source_bytes: bytes | None = None) -> str:
         """Compatibility view. Page labels must never pollute paper metadata."""
-        return "\n\n".join(PDFTextExtractor.extract_pages(file_path))
+        return "\n\n".join(PDFTextExtractor.extract_pages(file_path, source_bytes=source_bytes))

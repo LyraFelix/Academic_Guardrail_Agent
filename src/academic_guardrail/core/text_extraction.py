@@ -1,6 +1,7 @@
 """Read text in document order and preserve coordinates independently of parsing."""
 
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 
 from academic_guardrail.core.exceptions import ParserError
@@ -23,12 +24,12 @@ class ExtractedText:
                               char_start=start, char_end=end)
 
 
-def _docx_text(path: Path) -> tuple[str, bool]:
+def _docx_text(path: Path, source_bytes: bytes | None = None) -> tuple[str, bool]:
     from docx import Document
     from docx.table import Table
     from docx.text.paragraph import Paragraph
 
-    doc = Document(str(path))
+    doc = Document(BytesIO(source_bytes) if source_bytes is not None else str(path))
     lines = []
 
     def read_elements(elements, parent):
@@ -50,15 +51,20 @@ def _docx_text(path: Path) -> tuple[str, bool]:
     return "\n".join(lines), unsupported
 
 
-def read_document(file_path: str) -> ExtractedText:
-    """PDF pages use two-newline separators; other formats have no page claims."""
+def read_document(file_path: str, *, source_bytes: bytes | None = None) -> ExtractedText:
+    """Parse supplied bytes without reopening the path, retaining its coordinates.
+
+    PDF pages use two-newline separators; other formats have no page claims.
+    The optional bytes let callers hash the exact input that is parsed.
+    """
     path = Path(file_path).resolve()
-    if not path.is_file():
+    if source_bytes is None and not path.is_file():
         raise FileNotFoundError(f"File not found: {file_path}")
     try:
+        raw_bytes = path.read_bytes() if source_bytes is None else source_bytes
         if path.suffix.lower() == ".pdf":
             from academic_guardrail.core.pdf_extractor import PDFTextExtractor
-            pages = PDFTextExtractor.extract_pages(str(path))
+            pages = PDFTextExtractor.extract_pages(str(path), source_bytes=raw_bytes)
             document = ExtractedText(str(path), "\n\n".join(pages))
             offset = 0
             for number, text in enumerate(pages, 1):
@@ -71,13 +77,15 @@ def read_document(file_path: str) -> ExtractedText:
                 offset += len(text) + 2
             return document
         if path.suffix.lower() == ".docx":
-            text, unsupported = _docx_text(path)
+            text, unsupported = _docx_text(path, raw_bytes)
             document = ExtractedText(str(path), text)
             if unsupported:
                 document.diagnostics.append(ParseDiagnostic(
                     code="UNSUPPORTED_DOCX_CONTENT", message="检测到脚注、尾注或文本框；当前仅读取正文段落和表格。"))
             return document
-        return ExtractedText(str(path), path.read_text(encoding="utf-8-sig"))
+        # Match the universal-newline behavior of the legacy text-mode reader.
+        text = raw_bytes.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        return ExtractedText(str(path), text)
     except (OSError, UnicodeError, ImportError, RuntimeError) as exc:
         raise ParserError(f"Cannot extract {path.name}: {exc}") from exc
     except Exception as exc:

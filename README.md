@@ -52,7 +52,7 @@ Identity is resolved before retraction facts are assigned to a citation. An ambi
 
 ## MCP
 
-This project runs **one MCP server**, exposing seven tools and one workflow prompt. The tools are operations on that server, not separate MCP servers.
+This project runs **one MCP server**, exposing ten tools and one workflow prompt. The tools are operations on that server, not separate MCP servers.
 
 | Tool | Purpose |
 | --- | --- |
@@ -63,6 +63,9 @@ This project runs **one MCP server**, exposing seven tools and one workflow prom
 | `prepare_claim_review` | Resolve a reference or accept supplied text; save an evidence packet for the client |
 | `read_claim_evidence` | Read remaining evidence pages from the same saved snapshot |
 | `record_claim_review` | Check snapshot digest, evidence IDs and exact quotes; save the client's judgment |
+| `prepare_local_claim_review` | Match one local paper and freeze its real abstract or full text |
+| `follow_up_local_claim` | Search that same paper once for a gap recorded by the client; preserve earlier evidence |
+| `generate_claim_review_report` | Export selected saved judgments and their before/after evidence to HTML |
 
 Configure an MCP client to launch the installed executable:
 
@@ -73,6 +76,8 @@ Configure an MCP client to launch the installed executable:
 The four original tools and `prepare_claim_review` accept `offline: true`. Reading and recording packets are always local. Citation verification and document audit support `detail: compact | detailed | debug`. The client's model/network configuration remains outside this server's control; server offline mode does not make a cloud model local.
 
 Use the `review_claim_workflow` prompt or ask the client to prepare evidence, read every page, compare subject/relation/numbers/scope/counterevidence, and record its conclusion. Pass the returned `packet_sha256` as `expected_packet_sha256` when recording. A local `REVIEW_REQUIRED` result is a hint for the client to continue, not a final handoff to the user. See the [client workflow and code guide](docs/client_review_guide.md).
+
+For a local paper, the client can now record a specific missing fact, request one bounded literal search of the same source, and judge the extended evidence again. The HTML report preserves both judgments and shows the query, quotes, source locations and file status. Changed sources block new judgments; unresolved gaps remain visible. These three new tools are local and make no model API calls. See the [local follow-up guide](docs/local_followup_guide.md) for a runnable example and code reading order.
 
 Client conclusions are `SUPPORTED`, `CONTRADICTED`, `NOT_ENOUGH_EVIDENCE` or `UNCERTAIN`. `EVIDENCE_LINKS_VALID` only certifies mechanical quote/ID consistency; `semantic_judgment_verified` remains false. The existing CLI/HTML report contains local-rule results; client judgments are separate JSON records and the host client's response.
 

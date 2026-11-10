@@ -1,5 +1,6 @@
 """Index user-supplied papers, resolve identity, and retain traceable body passages."""
 
+import hashlib
 import re
 from pathlib import Path
 from typing import Optional
@@ -26,21 +27,33 @@ class LocalRefStore:
         self.diagnostics: list[ParseDiagnostic] = []
         self.resolver = ReferenceResolver()
         if refs_dir:
-            root = Path(refs_dir)
+            root = Path(refs_dir).resolve()
             if not root.is_dir():
                 self.diagnostics.append(ParseDiagnostic(code="LOCAL_DIRECTORY_UNREADABLE", message=f"参考文献目录不存在或不是文件夹：{refs_dir}"))
                 return
             excluded = {Path(path).resolve() for path in excluded_paths}
             for path in sorted(root.rglob("*")):
                 if path.is_file() and path.suffix.lower() in {".txt", ".md", ".docx", ".pdf"} and path.resolve() not in excluded:
-                    record = self._extract_paper_record(str(path), path.name, path.suffix.lower())
+                    if not path.resolve().is_relative_to(root):
+                        self.diagnostics.append(ParseDiagnostic(
+                            code="LOCAL_FILE_OUTSIDE_ROOT", message=f"参考文献路径指向目录以外：{path}"))
+                        continue
+                    record = self.extract_paper_record(str(path))
                     if record:
                         self.records.append(record)
 
-    def _extract_paper_record(self, path: str, filename: str, ext: str) -> Optional[PaperRecord]:
+    def extract_paper_record(self, path: str, *, source_bytes: bytes | None = None) -> Optional[PaperRecord]:
+        """Use the same identity/body parser for indexing and a pinned-file lookup."""
+        selected_path = Path(path)
+        return self._extract_paper_record(path, selected_path.name, selected_path.suffix.lower(),
+                                          source_bytes=source_bytes)
+
+    def _extract_paper_record(self, path: str, filename: str, ext: str,
+                              *, source_bytes: bytes | None = None) -> Optional[PaperRecord]:
         try:
-            document = read_document(path)
-        except (ParserError, FileNotFoundError) as exc:
+            raw_bytes = Path(path).read_bytes() if source_bytes is None else source_bytes
+            document = read_document(path, source_bytes=raw_bytes)
+        except (ParserError, OSError) as exc:
             self.diagnostics.append(ParseDiagnostic(code="LOCAL_FILE_UNREADABLE", message=str(exc)))
             return None
         self.diagnostics.extend(document.diagnostics)
@@ -48,9 +61,11 @@ class LocalRefStore:
         if not text.strip():
             self.diagnostics.append(ParseDiagnostic(code="LOCAL_FILE_EMPTY", message=f"文件没有可提取文本：{path}"))
             return None
-        reference_boundaries = [match.start() for pattern in (REFERENCE_SECTION, NUMBERED_REFERENCE)
-                                if (match := pattern.search(text))]
-        body_end = min(reference_boundaries, default=len(text))
+        # An explicit bibliography heading is stronger than a wrapped in-text
+        # citation such as "[38] showed ..." at the start of a PDF text line.
+        heading = REFERENCE_SECTION.search(text)
+        unheaded = NUMBERED_REFERENCE.search(text) if heading is None else None
+        body_end = heading.start() if heading else unheaded.start() if unheaded else len(text)
         body = text[:body_end]
         lines = list(re.finditer(r"(?m)^.*\S.*$", body))
         if not lines:
@@ -98,6 +113,7 @@ class LocalRefStore:
                            authors=authors, year=int(year_match.group()) if year_match else None,
                            doi=doi, doi_candidates=sorted(dois), abstract=abstract,
                            abstract_location=abstract_location, fulltext=text,
+                           source_sha256=hashlib.sha256(raw_bytes).hexdigest(),
                            passages=build_passages(document, text_start, body_end))
 
     def select_candidate(self, citation: Citation) -> Optional[dict]:

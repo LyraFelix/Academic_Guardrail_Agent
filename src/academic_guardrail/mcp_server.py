@@ -1,6 +1,7 @@
 """Model Context Protocol (MCP) Server for Academic Guardrail Agent."""
 
 import functools
+from typing import Literal
 from mcp.server.fastmcp import FastMCP
 from academic_guardrail.core.review_models import ClientJudgment
 from academic_guardrail.core.exceptions import (
@@ -118,7 +119,7 @@ async def prepare_claim_review(claim: str, reference_text: str = "", citation_st
     返回完整证据句、位置、文献身份、本地规则提示和分页信息。客户端继续判断语义，
     然后调用 record_claim_review；规则弃判不是要求用户接管。提供的裸文本不核验文献身份。
     """
-    from academic_guardrail.core.claim_review import build_review_packet, evidence_page
+    from academic_guardrail.core.claim_review import build_review_packet, packet_response
     from academic_guardrail.core.models import EvidencePassage
     from academic_guardrail.core.ref_store import LocalRefStore
     from academic_guardrail.core.result_formatter import citation_from_text
@@ -138,18 +139,7 @@ async def prepare_claim_review(claim: str, reference_text: str = "", citation_st
         finally:
             await service.close()
     digest = ReviewStore().save_packet(packet)
-    # Avoid repeating the same finding for every candidate sentence in the
-    # client context. Full findings remain in the stored packet.
-    findings = {(f.code, f.severity): {"code": f.code, "severity": f.severity, "message": f.message}
-                for f in packet.rule_assessment.findings}
-    return {**evidence_page(packet), "packet_sha256": digest,
-            "claim": packet.claim, "reference_status": packet.reference_status,
-            "reference": packet.reference, "blocking_reasons": packet.blocking_reasons,
-            "recommended_evidence_ids": packet.recommended_evidence_ids,
-            "rule_summary": {"state": packet.rule_assessment.state,
-                             "primary_excerpt": packet.rule_assessment.evidence_text,
-                             "findings": list(findings.values())},
-            "instructions": packet.instructions}
+    return packet_response(packet, digest)
 
 
 @mcp.tool()
@@ -175,16 +165,71 @@ async def record_claim_review(packet_id: str, judgment: ClientJudgment, expected
     return ReviewStore().record(packet_id, judgment, expected_packet_sha256)
 
 
+def _local_packet_response(packet) -> dict:
+    from academic_guardrail.core.claim_review import packet_response
+    from academic_guardrail.core.review_store import ReviewStore, content_digest
+    context = ReviewStore().load_context(packet.packet_id)
+    return {**packet_response(packet, content_digest(packet.model_dump(mode="json"))),
+            "local_review": context.model_dump(mode="json")}
+
+
+@mcp.tool()
+async def prepare_local_claim_review(claim: str, citation_str_or_doi: str, refs_dir: str,
+                                     initial_scope: Literal["abstract", "full_text"] = "abstract") -> dict:
+    """从同一篇身份匹配的本地文献准备摘要证据，保存文件指纹；全程离线。
+
+    initial_scope 为 abstract 或 full_text。没有摘要时明确返回空证据，不伪造摘要。
+    客户端记录判断及 missing_evidence 后，可对该文献进行一次定向补查。
+    """
+    from academic_guardrail.core.local_review import prepare_local_review
+    return _local_packet_response(await prepare_local_review(claim, citation_str_or_doi, refs_dir, initial_scope))
+
+
+@mcp.tool()
+async def follow_up_local_claim(review_id: str, expected_review_sha256: str, gap_index: int = 0) -> dict:
+    """按已保存的证据缺口在同一篇本地文献中补查一次，返回新证据包。
+
+    使用 record_claim_review 返回的 review_sha256；原文变化、明确结论或重复补查会拒绝。
+    命中只是候选原文。客户端须读取新包全部分页、重新判断并再次保存。
+    """
+    from academic_guardrail.core.local_review import follow_up_review
+    return _local_packet_response(follow_up_review(review_id, expected_review_sha256, gap_index))
+
+
+@mcp.tool()
+async def generate_claim_review_report(review_ids: list[str], output_path: str) -> dict:
+    """把指定判断及其补查前记录导出自包含 HTML，显示原文位置和结论变化。
+
+    报告保存时检查来源文件是否变化；不把引用校验或标签变化当成科学正确性认证。
+    使用新的 .html 路径，不能覆盖原文件或已有报告。
+    """
+    from academic_guardrail.core.followup_report import save_review_report
+    from academic_guardrail.core.review_store import ReviewStore
+    return save_review_report(ReviewStore(), review_ids, output_path)
+
+
 @mcp.prompt()
-def review_claim_workflow(claim: str, citation: str = "") -> str:
+def review_claim_workflow(claim: str, citation: str = "", refs_dir: str = "", output_path: str = "") -> str:
     """让客户端完成取证、语义判断、反证检查和引用校验的完整流程。"""
     import json
     from academic_guardrail.core.claim_review import REVIEW_INSTRUCTIONS
+    if refs_dir:
+        workflow = ("\nFirst call prepare_local_claim_review with the supplied claim, citation and refs_dir, "
+                    "using initial_scope=abstract. Read every page with read_claim_evidence, then record "
+                    "your judgment and any specific missing_evidence. If unresolved and a gap is recorded, "
+                    "call follow_up_local_claim once with that review_id, review_sha256 and selected gap. "
+                    "Read the entire extended packet and record a fresh judgment using its new digest. ")
+    else:
+        workflow = ("\nFirst call prepare_claim_review with the supplied claim and citation, "
+                    "or with source text the user supplied. Follow next_offset with read_claim_evidence. ")
+    if output_path:
+        workflow += ("After recording, call generate_claim_review_report with the final saved review_id "
+                     "and supplied output_path; its local parent is included automatically. ")
+    workflow += ("Report the client conclusion, exact quotes, source scope, any suggested revision, "
+                 "and remaining limitations. A changed verdict is not proof of improvement.\n")
     # User text is serialized as data, separate from the workflow instructions.
-    return (REVIEW_INSTRUCTIONS + "\nFirst call prepare_claim_review with the supplied claim and citation, "
-            "or with source text the user supplied. Follow next_offset with read_claim_evidence. "
-            "After recording, report the client conclusion, exact quotes, source scope, any suggested revision, and remaining limitations.\n"
-            "Task data: " + json.dumps({"claim": claim, "citation": citation}, ensure_ascii=False))
+    task = {"claim": claim, "citation": citation, "refs_dir": refs_dir, "output_path": output_path}
+    return REVIEW_INSTRUCTIONS + workflow + "Task data: " + json.dumps(task, ensure_ascii=False)
 
 
 def main():
