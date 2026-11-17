@@ -1,6 +1,6 @@
 # 本地补查的真实材料验证：怎样运行，怎样看结果
 
-这份导读解释评测流程。功能使用和代码阅读顺序见[本地补查导读](local_followup_guide.md)；具体测量结果另见[结果记录](local_followup_results.md)。评测脚本是可选工具，不会被 MCP 服务导入，也没有给服务端增加模型 API。
+这份导读解释评测流程。功能使用和代码阅读顺序见[本地补查导读](local_followup_guide.md)；当前测量见[90 条扩展结果](expanded_local_followup_results.md)，此前的[15 条结果](local_followup_results.md)保留为历史记录。评测脚本是可选工具，不会被 MCP 服务导入，也没有给服务端增加模型 API。
 
 ## 四个结果各代表什么
 
@@ -47,7 +47,7 @@ v3 只补齐对所有臂相同的论文身份输入，不修改 90 条论断、�
 
 ```powershell
 python -m scripts.prepare_local_followup_evaluation --inputs benchmarks/data/local_followup/dev_inputs.jsonl --refs-dir benchmarks/data/local_followup/refs --expected-gold-sha256 <事先记录的dev标签SHA256> --output benchmarks/runs/local_dev_plan_02
-python -m scripts.run_local_followup_evaluation --plan benchmarks/runs/local_dev_plan_02/plan.json --output benchmarks/runs/local_dev_run_02 --timeout 180
+python -m scripts.run_local_followup_evaluation --plan benchmarks/runs/local_dev_plan_02/plan.json --output benchmarks/runs/local_dev_run_02 --timeout 600
 python -m scripts.score_local_followup_evaluation --run benchmarks/runs/local_dev_run_02 --gold benchmarks/data/local_followup/dev_gold.jsonl --output benchmarks/runs/local_dev_scores_02.json
 ```
 

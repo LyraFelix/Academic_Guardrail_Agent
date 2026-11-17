@@ -74,6 +74,8 @@ python -m benchmarks run --dataset benchmarks/data/regression_v1 --output benchm
 
 ## 源码与历史文件
 
+本地论文补查的客户端评测另见[四种流程的执行与阅读导读](../docs/local_followup_evaluation_guide.md)及[90 条实际结果](../docs/expanded_local_followup_results.md)。它请求 `gpt-6.1-terra` / `max`，以单次读取可解析正文为主对照，分别报告原始判断、可用判断和调用成本。其材料与这里的 SciFact 规则诊断不同，分数不可混用。
+
 按 `schema.py → datasets.py → predictors.py → metrics.py → runner.py → reporting.py → __main__.py` 阅读。数据、预测、计分和展示各有单独职责。[中文学习导读](../docs/phase_four_guide.md) 解释为何这样划分。
 
 旧脚本原文保存在 [legacy](legacy/README.md)，哈希可核验；旧入口会给迁移提示。八条参考文献消歧样例仅保留为已有单元测试的输入，不代表外部检索准确率。
