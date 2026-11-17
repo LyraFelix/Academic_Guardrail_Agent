@@ -6,11 +6,11 @@ import json
 from pathlib import Path
 
 from academic_guardrail.core.review_store import ReviewStore
-from benchmarks.client_comparison import MAPPING, arm_metrics, paired_metrics
+from benchmarks.client_comparison import MAPPING, arm_metrics, paired_metrics, wilson_interval
 from benchmarks.datasets import sha256
 from benchmarks.local_followup_evaluation import (
     ARMS, bytes_digest, check_files, cost_summary, first_prompt, inspect_receipt,
-    load_packet_view, load_plan, relative_file, second_prompt,
+    load_packet_view, load_plan, relative_file, second_prompt, single_prompt,
 )
 from benchmarks.metrics import rate
 from scripts.run_paired_review import load_frozen_packet
@@ -39,7 +39,9 @@ def load_completed_run(run):
     indexed = {row["attempt"]: row for row in attempts}
     if len(indexed) != len(attempts) or len(attempts) != manifest["actual_cli_calls"]:
         raise ValueError("Actual invocation ledger contains missing or duplicate attempts")
-    if manifest["completed_cases"] != len(identifiers) or len(attempts) > 3 * len(identifiers):
+    if (manifest["completed_cases"] != len(identifiers) or manifest["planned_cases"] != len(identifiers)
+            or manifest["max_actual_cli_calls"] != plan["max_actual_cli_calls"]
+            or manifest["max_parallel"] != 3 or len(attempts) > 4 * len(identifiers)):
         raise ValueError("Completed run violates case count or actual call budget")
     requests = [json.loads(line) for line in (run / "requests.jsonl").read_text(encoding="utf-8").splitlines()]
     if len(requests) != len(attempts) or {row["attempt"] for row in requests} != set(indexed):
@@ -55,9 +57,11 @@ def load_completed_run(run):
         request = requests_by_attempt[attempt["attempt"]]
         if any(attempt.get(key) != value for key, value in request.items()):
             raise ValueError("Request fields differ from their corresponding invocation receipt")
-        if attempt["id"] not in cases_by_id or attempt["stage"] not in {"initial", "fulltext_direct", "local_followup"}:
+        if attempt["id"] not in cases_by_id or attempt["stage"] not in {"initial", "fulltext_single", "fulltext_direct", "local_followup"}:
             raise ValueError("Request references an unknown case or decision stage")
         receipt = receipts[attempt["attempt"]]
+        if receipt.get("requested_model") != plan["model"] or receipt.get("reasoning") != plan["reasoning"]:
+            raise ValueError("Invocation model or reasoning differs from the frozen configuration")
         if receipt.get("tool_items") or receipt.get("event_stream_valid") is not True:
             raise ValueError("Completed run contains an unverifiable model isolation boundary")
         threads = receipt.get("thread_ids", [])
@@ -68,7 +72,7 @@ def load_completed_run(run):
             raise ValueError("Successful attempt lacks its unique model thread ID")
         packet = load_frozen_packet(run / "runtime", attempt)
         case, frozen_case = cases_by_id[attempt["id"]], plan_by_id[attempt["id"]]
-        if attempt["stage"] in {"initial", "fulltext_direct"}:
+        if attempt["stage"] in {"initial", "fulltext_single", "fulltext_direct"}:
             key = "abstract_packet" if attempt["stage"] == "initial" else "full_text_packet"
             frozen_view = load_packet_view(run / "frozen", frozen_case[key])
             if any(attempt[key] != frozen_view[key] for key in ("packet_id", "packet_sha256")):
@@ -86,18 +90,24 @@ def load_completed_run(run):
         if bytes_digest(prompt_bytes) != attempt["prompt_sha256"]:
             raise ValueError("Dynamic prompt checksum changed")
         view = packet.model_dump(mode="json")
-        expected_prompt = first_prompt(view) if attempt["stage"] == "initial" else second_prompt(
-            view, receipts[case["initial_attempt"]].get("response"))
+        if attempt["stage"] == "initial":
+            expected_prompt = first_prompt(view)
+        elif attempt["stage"] == "fulltext_single":
+            expected_prompt = single_prompt(view)
+        else:
+            expected_prompt = second_prompt(view, receipts[case["initial_attempt"]].get("response"))
         if prompt_bytes != expected_prompt.encode("utf-8") or (directory / "prompt.txt").read_bytes() != prompt_bytes:
             raise ValueError("Prompt differs from its frozen renderer, actual packet or raw shared judgment")
     for case in cases:
         initial = indexed[case["initial_attempt"]]
+        single = indexed[case["single_final_attempt"]]
         direct = indexed[case["direct_final_attempt"]]
         local = indexed[case["local_final_attempt"]]
-        if initial["stage"] != "initial" or direct["stage"] != "fulltext_direct" or local["stage"] not in {
-                "initial", "local_followup"} or any(row["id"] != case["id"] for row in (initial, direct, local)):
+        if (initial["stage"] != "initial" or single["stage"] != "fulltext_single"
+                or direct["stage"] != "fulltext_direct" or local["stage"] not in {"initial", "local_followup"}
+                or any(row["id"] != case["id"] for row in (initial, single, direct, local))):
             raise ValueError("Case outcomes reference the wrong decision stage or case")
-        if sum(row["id"] == case["id"] for row in attempts) != (2 + (local["stage"] == "local_followup")):
+        if sum(row["id"] == case["id"] for row in attempts) != (3 + (local["stage"] == "local_followup")):
             raise ValueError("Case invocation count violates the two-call effective budget")
     for row in rows:
         final = indexed.get(row["attempt"])
@@ -110,13 +120,14 @@ def load_completed_run(run):
                 "prediction", "validation_error", "quote_count", "exact_quote_count", "usage", "elapsed_seconds")):
             raise ValueError("Arm result differs from its immutable raw final judgment")
         case = next(item for item in cases if item["id"] == row["id"])
-        expected_final = case["initial_attempt"] if row["arm"] == "abstract_only" else case[
-            "direct_final_attempt" if row["arm"] == "fulltext_direct" else "local_final_attempt"]
-        expected_cost = [case["initial_attempt"]]
-        if expected_final != case["initial_attempt"]:
+        outcome_keys = {"abstract_only": "initial_attempt", "fulltext_single": "single_final_attempt",
+                        "fulltext_direct": "direct_final_attempt", "local_followup": "local_final_attempt"}
+        expected_final = case[outcome_keys[row["arm"]]]
+        expected_cost = [expected_final] if row["arm"] == "fulltext_single" else [case["initial_attempt"]]
+        if row["arm"] != "fulltext_single" and expected_final != case["initial_attempt"]:
             expected_cost.append(expected_final)
         if row["attempt"] != expected_final or cost_ids != expected_cost:
-            raise ValueError("Arm omits or double counts the shared initial invocation")
+            raise ValueError("Arm cost differs from the single-call or shared-initial stage ledger")
     return manifest, plan, rows, cases, attempts
 
 
@@ -136,7 +147,7 @@ def read_gold(path, expected_hash, identifiers):
 
 def count_rate(identifiers, total):
     return {"count": len(identifiers), "denominator": total, "rate": rate(len(identifiers), total),
-            "case_ids": identifiers}
+            "interval": wilson_interval(len(identifiers), total), "case_ids": identifiers}
 
 
 def summarize_arm(rows, gold, attempts):
@@ -150,7 +161,15 @@ def summarize_arm(rows, gold, attempts):
     concrete = [row for row in rows if row["prediction"] in {"SUPPORT", "CONTRADICT"}]
     correct = [row["id"] for row in concrete if row["prediction"] == gold[row["id"]]]
     false = [row["id"] for row in concrete if row["prediction"] != gold[row["id"]]]
+    refutations = [row for row in rows if row["prediction"] == "CONTRADICT"]
+    true_refutations = [row["id"] for row in refutations if gold[row["id"]] == "CONTRADICT"]
+    concrete_gold = [row for row in rows if gold[row["id"]] in {"SUPPORT", "CONTRADICT"}]
     return {"metrics": arm_metrics(metric_rows, gold), "cost": cost_summary(charged),
+            "refutation": {"precision": count_rate(true_refutations, len(refutations)),
+                           "recall": count_rate(true_refutations, sum(label == "CONTRADICT" for label in gold.values()))},
+            "outcome_rates": {name: count_rate([row["id"] for row in rows if row["prediction"] == label], len(rows))
+                              for name, label in (("NEI", "NEI"), ("UNCERTAIN", "ABSTAIN"), ("ERROR", "ERROR"))},
+            "avoidable_nei": count_rate([row["id"] for row in concrete_gold if row["prediction"] == "NEI"], len(concrete_gold)),
             "correct_concrete": count_rate(correct, len(rows)),
             "false_concrete": count_rate(false, len(rows)),
             "false_concrete_among_concrete": count_rate(false, len(concrete)),
@@ -161,6 +180,29 @@ def summarize_arm(rows, gold, attempts):
             "final_attempts": {row["id"]: row["attempt"] for row in rows}}
 
 
+def summarize_pair(left, right, gold):
+    """All cases remain paired, including abstentions, rejected quotes and errors."""
+    left_by_id = {row["id"]: row for row in left}
+    wins, losses, both_correct, both_wrong = [], [], [], []
+    for row in right:
+        label = gold[row["id"]]
+        before = left_by_id[row["id"]]["prediction"] == label
+        after = row["prediction"] == label
+        if before and after:
+            both_correct.append(row["id"])
+        if not before and not after:
+            both_wrong.append(row["id"])
+        if label != "NEI":
+            if after and not before:
+                wins.append(row["id"])
+            if before and not after:
+                losses.append(row["id"])
+    return {"left": left[0]["arm"], "right": right[0]["arm"], **paired_metrics(left, right, gold),
+            "both_correct": both_correct, "both_wrong": both_wrong,
+            "correct_concrete": {"right_wins": wins, "right_losses": losses,
+                                 "ties": len(gold) - len(wins) - len(losses)}}
+
+
 def score(run, gold_path, destination):
     run, gold_path, destination = (Path(value).resolve() for value in (run, gold_path, destination))
     if destination.is_relative_to(run):
@@ -169,17 +211,7 @@ def score(run, gold_path, destination):
     # This is deliberately after every completeness/integrity/budget check above.
     gold = read_gold(gold_path, plan["expected_gold_sha256"], [case["id"] for case in plan["cases"]])
     grouped = {arm: [row for row in rows if row["arm"] == arm] for arm in ARMS}
-    direct, local = grouped["fulltext_direct"], grouped["local_followup"]
-    direct_by_id = {row["id"]: row for row in direct}
-    concrete_wins, concrete_losses = [], []
-    for row in local:
-        label = gold["full_text"][row["id"]]
-        left = direct_by_id[row["id"]]["prediction"] == label and label != "NEI"
-        right = row["prediction"] == label and label != "NEI"
-        if right and not left:
-            concrete_wins.append(row["id"])
-        if left and not right:
-            concrete_losses.append(row["id"])
+    local = grouped["local_followup"]
     unresolved = [case for case in cases if case["unresolved_initial"]]
     requested = [case for case in cases if case["lookup_requested"]]
     retrieval = {"total_cases": len(cases), "unresolved_initial": len(unresolved),
@@ -198,10 +230,8 @@ def score(run, gold_path, destination):
               "gold_sha256": plan["expected_gold_sha256"],
               "arms": {arm: summarize_arm(grouped[arm], gold["abstract" if arm == "abstract_only" else "full_text"], attempts)
                        for arm in ARMS},
-              "paired_full_text": {"left": "fulltext_direct", "right": "local_followup",
-                                   **paired_metrics(direct, local, gold["full_text"])},
-              "paired_correct_concrete": {"right_wins": concrete_wins, "right_losses": concrete_losses,
-                                          "ties": len(cases) - len(concrete_wins) - len(concrete_losses)},
+              "paired_primary": summarize_pair(grouped["fulltext_single"], local, gold["full_text"]),
+              "paired_secondary": summarize_pair(grouped["fulltext_direct"], local, gold["full_text"]),
               "retrieval": retrieval, "actual_cost": cost_summary(attempts),
               "shared_initial_cost": cost_summary([row for row in attempts if row["stage"] == "initial"]),
               "raw_attempt_errors": [{"id": row["id"], "stage": row["stage"], "error": row["error"]}
@@ -212,8 +242,9 @@ def score(run, gold_path, destination):
               "workflow_errors": [{"id": case["id"], "errors": case["workflow_errors"]} for case in cases
                                   if case["workflow_errors"]],
               "elapsed_wall_seconds": manifest["elapsed_seconds"],
+              "max_actual_cli_calls": plan["max_actual_cli_calls"],
               "boundary": plan["rules"]["boundary"],
-              "interpretation": "Abstract-only agreement uses abstract gold; both workflow finals use full-text gold. NEI is not a solved concrete judgment. Raw label changes alone are not improvements. Quote/record acceptance checks provenance, not semantics. Each arm cost includes the shared first call; actual_cost counts it once. No currency-cost or human-gold claim; paired p-values are descriptive/exploratory."}
+              "interpretation": "Abstract-only agreement uses abstract gold; all full-text finals use full-text gold. NEI is not a solved concrete judgment. Quote/record acceptance checks provenance, not semantics. Single-call full text pays one call; both two-stage arms include the shared initial call; actual_cost counts it once. Reasoning output is reported separately as a subset of output, never added again. No currency-cost, human-expert-gold or general-accuracy claim; intervals and paired p-values are descriptive/exploratory."}
     with destination.open("x", encoding="utf-8") as handle:
         json.dump(result, handle, ensure_ascii=False, indent=2)
         handle.write("\n")

@@ -17,8 +17,9 @@ from scripts.codex_review_client import MODEL, REASONING, strict_schema
 from scripts.run_paired_review import inspect_answer, load_frozen_packet
 
 
-PROTOCOL = "local_evidence_followup_v1"
-ARMS = ("abstract_only", "fulltext_direct", "local_followup")
+PROTOCOL = "local_evidence_followup_v2"
+ARMS = ("abstract_only", "fulltext_single", "fulltext_direct", "local_followup")
+ARM_CALL_LIMITS = dict(zip(ARMS, (1, 1, 2, 2)))
 PRIOR_TOKEN = "<FROZEN_PRIOR_JUDGMENT_JSON>"
 COMMON_INSTRUCTIONS = DIRECT_INSTRUCTIONS + "\n\n" + OUTPUT_INSTRUCTIONS + """
 SUPPORTED and CONTRADICTED require at least one exact quote. Do not strengthen
@@ -40,15 +41,17 @@ same output rules. Report unresolved gaps even after considering this evidence.
 PROTOCOL_RULES = {
     "arms": list(ARMS),
     "shared_initial": "One independent abstract-only judgment per case, shared by both workflows.",
+    "fulltext_single": "One independent full-local-text judgment without a prior judgment or initial-call charge.",
     "fulltext_direct": "Always one further fresh-context judgment on full local text plus the raw shared judgment.",
     "local_followup": "Only recorded NEI/UNCERTAIN with a gap uses gap 0 once, then one fresh-context judgment.",
     "no_followup": "Carry the initial raw result; missing gap, record rejection or lookup failure stays in the denominator.",
-    "budget": "At most 3N actual CLI calls; at most two effective calls per workflow/case; no repair or retry.",
+    "budget": "At most 4N actual CLI calls; single-call full text costs one, each two-stage workflow at most two; no repair or retry.",
     "common_rules": "Identical schema, semantic instructions and offline validator; no MCP heuristic hints to either arm.",
     "isolation": "Fresh unique CLI thread per invocation; no model tools; abort on unverifiable stream, tool use or duplicate thread.",
     "failure_stop": "Stop after a call group in which every invocation failed; retain an incomplete manifest.",
-    "primary": "Raw final labels against full-text gold, including rejected records and failed cases.",
-    "cost": "Count the shared first call in each arm; count it once in actual execution totals. Unknown usage is null.",
+    "primary": "Local follow-up versus independent single-call full text; raw final labels including rejected records and failed cases.",
+    "secondary": "Local follow-up versus two-stage full text with the shared raw abstract judgment.",
+    "cost": "Single-call full text pays only its own call. Both two-stage arms pay the shared initial call; actual totals count it once. Unknown usage is null.",
     "gold": "Prepare/run never open gold; score selected partition only after a complete unchanged run.",
     "boundary": "Purposive assistant-authored claims and reference judgments, not natural benchmark or human gold; held-out papers do not prove absence of pretraining exposure.",
 }
@@ -99,6 +102,11 @@ def read_inputs(path):
 
 def first_prompt(packet):
     return COMMON_INSTRUCTIONS + "\n\nSOURCE_DATA_JSON\n" + json.dumps(shared_evidence(packet), ensure_ascii=False)
+
+
+def single_prompt(packet):
+    """The independent control sees full evidence, with no previous answer."""
+    return first_prompt(packet)
 
 
 def second_template(packet):
@@ -159,8 +167,10 @@ def load_plan(plan_path):
         raise ValueError("Plan must cover every frozen input exactly once")
     if any(row["id"] != row["input"]["id"] for row in plan["cases"]):
         raise ValueError("Plan case ID differs from its frozen input identifier")
-    if plan["partition"] != inputs[0]["partition"] or plan["max_actual_cli_calls"] != 3 * len(inputs):
+    if plan["partition"] != inputs[0]["partition"] or plan["max_actual_cli_calls"] != 4 * len(inputs):
         raise ValueError("Frozen partition or invocation budget differs from its cases")
+    if plan.get("max_calls_per_arm_case") != ARM_CALL_LIMITS or plan.get("max_effective_calls_per_arm_case") != 2:
+        raise ValueError("Frozen per-arm call budget differs from the protocol")
     sources = {str(Path(row["source_path"]).resolve()): sha256(Path(row["source_path"])) for row in inputs}
     if sources != plan["source_sha256"]:
         raise ValueError("Local source changed after protocol freezing")
@@ -172,6 +182,7 @@ def load_plan(plan_path):
         check_packet(base, abstract, case["input"], "abstract")
         check_packet(base, full, case["input"], "full_text")
         for key, expected in (("initial_prompt", first_prompt(abstract)),
+                              ("single_prompt", single_prompt(full)),
                               ("direct_template", second_template(full))):
             if relative_file(base, case[key]).read_bytes() != expected.encode("utf-8"):
                 raise ValueError("Frozen prompt differs from its packet and common rules")
@@ -189,8 +200,17 @@ def inspect_receipt(packet, receipt):
 def cost_summary(attempts):
     """Unknown or partially reported fields stay null, with explicit observed subtotals."""
     values = {key: [row["usage"][key] for row in attempts if isinstance(row.get("usage"), dict)
-                    and isinstance(row["usage"].get(key), int) and not isinstance(row["usage"][key], bool)]
+                    and isinstance(row["usage"].get(key), int) and not isinstance(row["usage"][key], bool)
+                    and row["usage"][key] >= 0]
               for key in TOKEN_KEYS}
+    # Cached input is part of input; reasoning output is part of output. Neither
+    # is added a second time. Derive uncached input only from fully known pairs.
+    values["uncached_input_tokens"] = []
+    for row in attempts:
+        usage = row["usage"] if isinstance(row.get("usage"), dict) else {}
+        total, cached = usage.get("input_tokens"), usage.get("cached_input_tokens")
+        if type(total) is int and type(cached) is int and 0 <= cached <= total:
+            values["uncached_input_tokens"].append(total - cached)
     return {"model_calls": len(attempts),
             "usage_recorded_calls": sum(isinstance(row.get("usage"), dict) for row in attempts),
             "reported_tokens": {key: sum(items) if len(items) == len(attempts) else None

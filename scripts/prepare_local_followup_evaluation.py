@@ -9,9 +9,9 @@ import re
 from academic_guardrail.core.review_models import ClientJudgment
 from benchmarks.datasets import sha256, write_json
 from benchmarks.local_followup_evaluation import (
-    COMMON_INSTRUCTIONS, PROTOCOL, PROTOCOL_RULES, SECOND_INSTRUCTIONS,
+    ARM_CALL_LIMITS, COMMON_INSTRUCTIONS, PROTOCOL, PROTOCOL_RULES, SECOND_INSTRUCTIONS,
     check_packet, file_hashes, first_prompt, load_plan, read_inputs,
-    runtime_code_hashes, second_template,
+    runtime_code_hashes, second_template, single_prompt,
 )
 from benchmarks.runner import _code_record
 from scripts.client_review_batch import call, now, server
@@ -59,8 +59,10 @@ async def prepare(inputs_path, refs_dir, output, expected_gold_sha256):
                         case[f"{scope}_packet"] = filename
                         views[scope] = packet
                     case["initial_prompt"] = f"prompts/{index:03d}_initial.txt"
+                    case["single_prompt"] = f"prompts/{index:03d}_single.txt"
                     case["direct_template"] = f"prompts/{index:03d}_direct_template.txt"
                     (output / case["initial_prompt"]).write_bytes(first_prompt(views["abstract"]).encode("utf-8"))
+                    (output / case["single_prompt"]).write_bytes(single_prompt(views["full_text"]).encode("utf-8"))
                     (output / case["direct_template"]).write_bytes(second_template(views["full_text"]).encode("utf-8"))
                     cases.append(case)
                     manifest["prepared"] += 1
@@ -74,7 +76,8 @@ async def prepare(inputs_path, refs_dir, output, expected_gold_sha256):
                 "runtime_code_sha256": code, "code": _code_record(),
                 "model": MODEL, "reasoning": REASONING,
                 "expected_gold_sha256": expected_gold_sha256,
-                "max_actual_cli_calls": 3 * len(cases), "max_effective_calls_per_arm_case": 2,
+                "max_actual_cli_calls": 4 * len(cases), "max_effective_calls_per_arm_case": 2,
+                "max_calls_per_arm_case": ARM_CALL_LIMITS,
                 "dynamic_prompt_renderer": "benchmarks.local_followup_evaluation.second_prompt"}
         write_json(output / "plan.json", plan)
         manifest["status"] = "completed"

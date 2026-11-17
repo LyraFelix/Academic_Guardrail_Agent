@@ -6,6 +6,7 @@ import importlib
 import json
 from pathlib import Path
 import shutil
+import threading
 
 import pytest
 
@@ -18,6 +19,11 @@ def modules():
 
 @pytest.fixture
 def material(tmp_path):
+    return make_material(tmp_path)
+
+
+def make_material(tmp_path, *, identifier="dev_001", partition="dev", paper_id="synthetic",
+                  fulltext_label="SUPPORTED"):
     refs = tmp_path / "refs"
     refs.mkdir()
     source = refs / "study.txt"
@@ -26,13 +32,13 @@ def material(tmp_path):
     observations = "\n\n".join(f"Additional observation {index} discusses study limitations." for index in range(40))
     source.write_text(source.read_text(encoding="utf-8").replace("\nReferences\n", f"\n{observations}\n\nReferences\n"),
                       encoding="utf-8")
-    item = {"id": "dev_001", "partition": "dev", "paper_id": "synthetic",
+    item = {"id": identifier, "partition": partition, "paper_id": paper_id,
             "claim": "The treatment reduced mortality by 25% at six months.",
             "citation_str_or_doi": "Synthetic Local Follow-up Study",
             "paper_title": "Synthetic Local Follow-up Study", "source_path": str(source)}
     inputs = tmp_path / "inputs.jsonl"
     inputs.write_text(json.dumps(item) + "\n", encoding="utf-8")
-    gold_bytes = (json.dumps({"id": item["id"], "fulltext_label": "SUPPORTED",
+    gold_bytes = (json.dumps({"id": item["id"], "fulltext_label": fulltext_label,
                               "abstract_only_label": "NOT_ENOUGH_EVIDENCE"}) + "\n").encode()
     gold = tmp_path / "gold.jsonl"
     gold.write_bytes(gold_bytes)
@@ -214,6 +220,15 @@ async def test_full_workflow_preserves_prepared_store_and_accounts_shared_cost(m
     plan = await freeze(material, prep)
     before = helper.file_hashes(plan.parent)
     calls = fake_model(monkeypatch, runner, {"initial": "NEI"})
+    raw_invoke = runner.invoke
+    final_group = threading.Barrier(3)
+
+    def concurrent_finals(prompt, schema, destination, timeout):
+        if not destination.name.endswith("_initial"):
+            final_group.wait(timeout=10)
+        return raw_invoke(prompt, schema, destination, timeout)
+
+    monkeypatch.setattr(runner, "invoke", concurrent_finals)
     run = material["root"] / "run"
     original_open = Path.open
     with monkeypatch.context() as guard:
@@ -223,17 +238,21 @@ async def test_full_workflow_preserves_prepared_store_and_accounts_shared_cost(m
         guard.setattr(Path, "open", no_gold)
         manifest = await runner.run_async(plan, run)
     assert manifest["status"] == "completed"
-    assert manifest["actual_cli_calls"] == len(calls) == 3
+    assert manifest["actual_cli_calls"] == len(calls) == 4
+    assert manifest["max_parallel"] == 3
     assert helper.file_hashes(plan.parent) == before
     for line in (run / "requests.jsonl").read_text().splitlines():
         request = json.loads(line)
         assert (run / request["prompt_file"]).read_bytes() == (run / request["attempt"] / "prompt.txt").read_bytes()
     report = scorer.score(run, material["gold"], material["root"] / "score.json")
-    assert report["actual_cost"]["model_calls"] == 3
+    assert report["actual_cost"]["model_calls"] == 4
+    assert report["arms"]["fulltext_single"]["cost"]["model_calls"] == 1
     assert report["arms"]["local_followup"]["cost"]["model_calls"] == 2
     assert report["arms"]["fulltext_direct"]["cost"]["model_calls"] == 2
     assert report["arms"]["local_followup"]["correct_concrete"]["count"] == 1
     assert report["retrieval"]["requested"] == 1
+    assert report["paired_primary"]["left"] == "fulltext_single"
+    assert report["paired_secondary"]["left"] == "fulltext_direct"
     assert (run / "review_report.html").exists()
 
 
@@ -246,12 +265,12 @@ async def test_decisive_initial_is_carried_forward_but_direct_still_runs(materia
     run = material["root"] / "run"
     await runner.run_async(plan, run)
     result = scorer.score(run, material["gold"], material["root"] / "score.json")
-    assert len(calls) == result["actual_cost"]["model_calls"] == 2
+    assert len(calls) == result["actual_cost"]["model_calls"] == 3
     assert result["arms"]["local_followup"]["cost"]["model_calls"] == 1
     assert result["arms"]["fulltext_direct"]["cost"]["model_calls"] == 2
     assert result["retrieval"]["requested"] == 0
     assert result["arms"]["fulltext_direct"]["false_concrete"]["count"] == 1
-    assert result["paired_correct_concrete"]["right_wins"] == ["dev_001"]
+    assert result["paired_secondary"]["correct_concrete"]["right_wins"] == ["dev_001"]
 
 
 @pytest.mark.asyncio
@@ -269,7 +288,7 @@ async def test_missing_or_invalid_gap_stays_in_denominator(material, monkeypatch
     assert arm["metrics"]["confusion"]["SUPPORT"]["NEI"] == 1
     assert arm["workflow_error_cases"] == 1
     assert arm["cost"]["model_calls"] == 1
-    assert len(calls) == 2
+    assert len(calls) == 3
 
 
 @pytest.mark.asyncio
@@ -291,7 +310,7 @@ async def test_rejected_second_label_remains_raw_and_unknown_usage_is_not_zero(m
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("second", [{"initial": "TOOLS"},
-                                  {"initial": "NEI", "fulltext_direct": "FAIL", "local_followup": "FAIL"},
+                                  {"initial": "NEI", "fulltext_single": "FAIL", "fulltext_direct": "FAIL", "local_followup": "FAIL"},
                                   {"initial": "NEI", "fulltext_direct": "DUPLICATE_THREAD"}])
 async def test_isolation_or_all_failed_group_stops_and_cannot_score(material, monkeypatch, second):
     _, prep, runner, scorer = modules()
@@ -301,7 +320,7 @@ async def test_isolation_or_all_failed_group_stops_and_cannot_score(material, mo
     run = material["root"] / "run"
     with pytest.raises(RuntimeError):
         await runner.run_async(plan, run)
-    assert len(calls) <= 3
+    assert len(calls) <= 4
     if second["initial"] == "TOOLS":
         assert len(calls) == 1
     manifest = json.loads((run / "manifest.json").read_text())
@@ -311,16 +330,44 @@ async def test_isolation_or_all_failed_group_stops_and_cannot_score(material, mo
 
 
 @pytest.mark.asyncio
-async def test_one_failed_second_attempt_is_a_completed_denominator_case(material, monkeypatch):
+@pytest.mark.parametrize("failed_stage", ["fulltext_single", "fulltext_direct", "local_followup"])
+async def test_one_failed_second_attempt_is_a_completed_denominator_case(material, monkeypatch, failed_stage):
     _, prep, runner, scorer = modules()
     install_local_transport(monkeypatch, prep, runner)
     plan = await freeze(material, prep)
-    fake_model(monkeypatch, runner, {"initial": "NEI", "fulltext_direct": "FAIL"})
+    fake_model(monkeypatch, runner, {"initial": "NEI", failed_stage: "FAIL"})
     run = material["root"] / "run"
     await runner.run_async(plan, run)
     result = scorer.score(run, material["gold"], material["root"] / "score.json")
-    assert result["arms"]["fulltext_direct"]["metrics"]["errors"] == 1
-    assert result["arms"]["fulltext_direct"]["metrics"]["total"] == 1
+    assert result["arms"][failed_stage]["metrics"]["errors"] == 1
+    assert result["arms"][failed_stage]["metrics"]["total"] == 1
+    assert result["actual_cost"]["model_calls"] == 4
+
+
+@pytest.mark.asyncio
+async def test_failed_lookup_carries_initial_without_ignoring_cost(material, monkeypatch):
+    _, prep, runner, scorer = modules()
+    install_local_transport(monkeypatch, prep, runner)
+    plan = await freeze(material, prep)
+    raw_call = runner.call
+
+    async def fail_lookup(session, name, arguments, log):
+        if name == "follow_up_local_claim":
+            raise OSError("Synthetic lookup unavailable")
+        return await raw_call(session, name, arguments, log)
+
+    monkeypatch.setattr(runner, "call", fail_lookup)
+    calls = fake_model(monkeypatch, runner, {"initial": "NEI"})
+    run = material["root"] / "run"
+    await runner.run_async(plan, run)
+    result = scorer.score(run, material["gold"], material["root"] / "score.json")
+    assert len(calls) == result["actual_cost"]["model_calls"] == 3
+    assert {stage for stage, _ in calls} == {"initial", "fulltext_single", "fulltext_direct"}
+    local = result["arms"]["local_followup"]
+    assert local["outcome_rates"]["NEI"]["count"] == local["metrics"]["total"] == 1
+    assert local["cost"]["model_calls"] == 1
+    assert local["workflow_error_cases"] == 1
+    assert result["retrieval"]["status_counts"] == {"FAILED": 1}
 
 
 @pytest.mark.asyncio
@@ -350,7 +397,7 @@ async def test_scorer_rejects_changed_or_duplicate_results_before_opening_gold(m
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tamper", ["request", "prompt"])
+@pytest.mark.parametrize("tamper", ["request", "prompt", "single_prompt"])
 async def test_scorer_rechecks_request_and_rendered_prompt_before_gold(material, monkeypatch, tamper):
     helper, prep, runner, scorer = modules()
     install_local_transport(monkeypatch, prep, runner)
@@ -363,7 +410,8 @@ async def test_scorer_rechecks_request_and_rendered_prompt_before_gold(material,
         requests[0]["stage"] = "unrecorded_stage"
     else:
         attempts = [json.loads(line) for line in (run / "attempts.jsonl").read_text().splitlines()]
-        target = next(row for row in attempts if row["stage"] == "fulltext_direct")
+        stage = "fulltext_single" if tamper == "single_prompt" else "fulltext_direct"
+        target = next(row for row in attempts if row["stage"] == stage)
         altered = b"An altered prompt must never be silently scored."
         (run / target["prompt_file"]).write_bytes(altered)
         (run / target["attempt"] / "prompt.txt").write_bytes(altered)
@@ -381,3 +429,74 @@ async def test_scorer_rechecks_request_and_rendered_prompt_before_gold(material,
     monkeypatch.setattr(Path, "open", no_gold)
     with pytest.raises(ValueError, match="[Pp]rompt|[Rr]equest"):
         scorer.score(run, material["gold"], material["root"] / "score.json")
+
+
+def test_single_fulltext_is_independent_and_model_identity_is_shared():
+    from benchmarks.client_comparison import OUTPUT_INSTRUCTIONS
+    from scripts.codex_review_client import MODEL, REASONING, command_for
+    helper, _, _, _ = modules()
+    packet = {"claim": "An original claim", "evidence": [{"id": "e1", "text": "Complete text"}]}
+    prompt = helper.single_prompt(packet)
+    assert "PRIOR_JUDGMENT" not in prompt
+    assert "previous judgment" not in prompt.lower()
+    assert "Complete text" in prompt
+    assert MODEL == "gpt-6.1-terra" and REASONING == "max"
+    assert f"client_model to {MODEL}." in OUTPUT_INSTRUCTIONS
+    command = command_for("codex", "schema.json", "response.json")
+    assert command[command.index("--model") + 1] == MODEL
+    assert 'model_reasoning_effort="max"' in command
+    assert "multi_agent_v2" in command
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tamper", ["single_cost", "missing_single", "model", "reasoning", "budget"])
+async def test_new_stage_integrity_is_checked_before_gold(material, monkeypatch, tamper):
+    helper, prep, runner, scorer = modules()
+    install_local_transport(monkeypatch, prep, runner)
+    plan = await freeze(material, prep)
+    fake_model(monkeypatch, runner, {"initial": "NEI"})
+    run = material["root"] / "run"
+    await runner.run_async(plan, run)
+    rows = json.loads((run / "rows.json").read_bytes())
+    single = next(row for row in rows if row["arm"] == "fulltext_single")
+    manifest = json.loads((run / "manifest.json").read_bytes())
+    if tamper == "single_cost":
+        initial = next(row for row in rows if row["arm"] == "abstract_only")
+        single["cost_attempts"].insert(0, initial["attempt"])
+    elif tamper == "missing_single":
+        rows.remove(single)
+    elif tamper in {"model", "reasoning"}:
+        receipt_path = run / single["attempt"] / "observed_receipt.json"
+        receipt = json.loads(receipt_path.read_bytes())
+        receipt["requested_model" if tamper == "model" else "reasoning"] = "changed"
+        receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    else:
+        manifest["max_actual_cli_calls"] += 1
+    (run / "rows.json").write_text(json.dumps(rows), encoding="utf-8")
+    manifest["files"] = helper.file_hashes(run)
+    (run / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    original_open = Path.open
+
+    def no_gold(path, *args, **kwargs):
+        assert path.resolve() != material["gold"].resolve(), "inconsistent run opened gold"
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", no_gold)
+    with pytest.raises(ValueError):
+        scorer.score(run, material["gold"], material["root"] / "score.json")
+
+
+def test_token_breakdown_requires_complete_usage_and_does_not_add_reasoning_twice():
+    helper, _, _, _ = modules()
+    known = {"elapsed_seconds": 1, "usage": {"input_tokens": 100, "cached_input_tokens": 25,
+                                            "output_tokens": 20, "reasoning_output_tokens": 10}}
+    cost = helper.cost_summary([known, known])
+    assert cost["reported_tokens"]["uncached_input_tokens"] == 150
+    assert cost["reported_tokens"]["output_tokens"] == 40
+    assert cost["reported_tokens"]["reasoning_output_tokens"] == 20
+    unknown = {"elapsed_seconds": 1, "usage": {"input_tokens": 30, "output_tokens": 5}}
+    partial = helper.cost_summary([known, unknown])
+    assert partial["reported_tokens"]["input_tokens"] == 130
+    assert partial["reported_tokens"]["cached_input_tokens"] is None
+    assert partial["reported_tokens"]["uncached_input_tokens"] is None
+    assert partial["reported_tokens"]["reasoning_output_tokens"] is None

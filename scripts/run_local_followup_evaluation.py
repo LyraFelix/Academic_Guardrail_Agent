@@ -67,7 +67,7 @@ async def run_async(plan_path, output, timeout=180):
     manifest = {"status": "incomplete", "started_utc": now(), "protocol": plan["protocol"],
                 "model": plan["model"], "reasoning": plan["reasoning"], "plan_sha256": plan_hash,
                 "planned_cases": len(plan["cases"]), "completed_cases": 0, "actual_cli_calls": 0,
-                "max_actual_cli_calls": plan["max_actual_cli_calls"], "max_parallel": 2,
+                "max_actual_cli_calls": plan["max_actual_cli_calls"], "max_parallel": 3,
                 "timeout_seconds": timeout, "gold_opened": False}
     attempts, rows, case_results, seen_threads = [], [], [], set()
     try:
@@ -177,17 +177,23 @@ async def run_async(plan_path, output, timeout=180):
                                 local["workflow_errors"] = [f"lookup_failed: {exc}"]
                             timings["lookup_seconds"] = time.monotonic() - before
                     verify_freeze()
-                    jobs = [judge(case, "fulltext_direct", full, second_prompt(full, first.get("response")))]
+                    jobs = [judge(case, "fulltext_single", full,
+                                  (frozen / case["single_prompt"]).read_text(encoding="utf-8")),
+                            judge(case, "fulltext_direct", full, second_prompt(full, first.get("response")))]
                     if followup is not None:
                         jobs.append(judge(case, "local_followup", followup, second_prompt(followup, first.get("response"))))
                     results = await asyncio.gather(*jobs)
                     check_isolation([receipt for receipt, _ in results], seen_threads)
-                    direct_receipt, direct = results[0]
+                    by_stage = {row["stage"]: (receipt, row) for receipt, row in results}
+                    _, single = by_stage["fulltext_single"]
+                    single = {**single, "arm": "fulltext_single", "record_accepted": False,
+                              "cost_attempts": [single["attempt"]], "workflow_errors": []}
+                    _, direct = by_stage["fulltext_direct"]
                     direct = {**direct, "arm": "fulltext_direct", "record_accepted": False,
                               "cost_attempts": [initial["attempt"], direct["attempt"]], "workflow_errors": []}
                     latest_record = first_record
                     if followup is not None:
-                        final_receipt, final = results[1]
+                        final_receipt, final = by_stage["local_followup"]
                         before = time.monotonic()
                         final_record, final_error = await record_valid(session, runtime, followup,
                                                                       final_receipt, final, log)
@@ -201,8 +207,9 @@ async def run_async(plan_path, output, timeout=180):
                     if latest_record is not None:
                         report_ids.append(latest_record["review_id"])
                     outcome.update(local_final_attempt=local["attempt"],
+                                   single_final_attempt=single["attempt"],
                                    direct_final_attempt=direct["attempt"], workflow_errors=local["workflow_errors"])
-                    rows.extend([abstract_row, direct, local])
+                    rows.extend([abstract_row, single, direct, local])
                     case_results.append(outcome)
                     manifest["completed_cases"] += 1
                     write_json(output / "rows.json", rows)

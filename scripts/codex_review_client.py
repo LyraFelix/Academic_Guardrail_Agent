@@ -12,9 +12,10 @@ import subprocess
 import tempfile
 import time
 
-MODEL = "gpt-6.1-sol"
-REASONING = "high"
+MODEL = "gpt-6.1-terra"
+REASONING = "max"
 DISABLED_FEATURES = ("shell_tool", "unified_exec", "apps", "plugins", "multi_agent",
+                     "multi_agent_v2",
                      "memories", "hooks", "browser_use", "computer_use", "image_generation",
                      "view_image", "code_mode_host", "sleep_tool", "shell_snapshot",
                      "remote_plugin", "unbounded_connection_retries")
