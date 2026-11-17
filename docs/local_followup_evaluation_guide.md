@@ -47,15 +47,19 @@ python -m scripts.score_local_followup_evaluation --run benchmarks/runs/local_de
 
 每批最多生成 30 条报告记录，适用现有每次 50 条的报告上限。验证样本来自另外的论文，不能看过其参考答案后再修改检索或提示，并继续称其为未使用的验证集。单批运行器校验本批计划；全批次冻结和总预算必须由研究执行清单检查，汇总器事后拒绝混合配置或跨分区论文重叠。
 
+研究执行器应创建一个 `seen_threads = set()`，并在每次调用 `run_async(plan, output, timeout=600, seen_threads=seen_threads)` 时传入同一个集合；同步 `run` 也支持此参数。这样第二批若复用第一批的 CLI 会话 ID，会在观察到重复后立即停止后续调用。单批 CLI 命令不变，默认使用本批自己的集合。汇总器还会从严格校验的原始收据独立检查跨批次会话 ID，且在所有检查通过前不打开任何 gold。
+
 全部完成后汇总实际运行目录和各自的标签文件：
 
 ```powershell
 python -m scripts.summarize_local_followup_evaluation --batch benchmarks/runs/local_dev_run_01 benchmarks/data/local_followup/dev_gold.jsonl --batch benchmarks/runs/local_validation_a_run_01 benchmarks/data/local_followup/validation_a_gold.jsonl --batch benchmarks/runs/local_validation_b_run_01 benchmarks/data/local_followup/validation_b_gold.jsonl --output benchmarks/runs/local_combined_scores_01.json --cases-csv benchmarks/runs/local_combined_cases_01.csv
 ```
 
-这里的路径是示例，须换成实际冻结材料路径。汇总器支持任意非空、互不重叠的批次列表；本次研究仍按事先批准的三批 90 例和总计 360 次调用上限执行。汇总器先调用严格运行校验，再打开标签，重新计算结果，不读取可修改的历史 score JSON。它拒绝模型、推理或协议混用、重复 case ID，以及同一论文或同源字节跨分区。可以另传两个验证分区，得到单独的合并验证结果；不要把开发集混入验证分母。
+这里的路径是示例，须换成实际冻结材料路径。汇总器支持任意非空、互不重叠的批次列表；本次研究仍按事先批准的三批 90 例和总计 360 次调用上限执行。汇总器先调用严格运行校验，再打开标签，重新计算结果，不读取可修改的历史 score JSON。它拒绝模型、推理或协议混用、重复 case ID、跨批次会话 ID 复用，以及同一论文或同源字节跨分区。可以另传两个验证分区，得到单独的合并验证结果；不要把开发集混入验证分母。
 
 所有输出目录和结果文件必须使用新路径。准备阶段冻结输入、来源指纹、实际 MCP 证据包、摘要提示、无先前答案的全文提示、两阶段提示模板、输出格式、模型配置、预先记录的 gold 哈希及运行代码。执行阶段复制证据存储，保留原始准备目录，并记录每次请求、CLI 命令、事件、答案、耗时、用量和 MCP 收据。计分会重新核对文件清单及哈希、每臂调用归属和原始提示，拒绝缺例、重复或改动过的结果。
+
+冻结和运行还会验证实际导入的 `academic_guardrail` 包：其全部 `.py` 文件清单及内容必须与当前 `src/academic_guardrail` 相同。比较时只把 CRLF 换行规范化为 LF，其他字节、缺失文件或额外文件均不放过。可以使用匹配的已安装 wheel，也可以通过 `PYTHONPATH` 指向当前源码；不能只哈希 checkout，却实际运行旧 wheel。计划和运行清单的 `imported_core` 保存实际导入位置、校验说明及规范化哈希。MCP 子进程会把已验证包的父目录放在继承的 `PYTHONPATH` 之前，以使用同一份核心实现。
 
 模型与推理配置只在 `scripts/codex_review_client.py` 定义，输出提示中的 `client_model` 也从这个常量生成。改变模型、提示、检索或运行代码后必须建立新计划，不能沿用旧冻结目录。运行器不修复答案，也不重试失败判断；CLI 内部是否重试网络请求不能由调用次数推断。请求关闭其他工具、两种 multi-agent 功能、记忆和技能，一旦实际观察到工具调用、无法解析的事件或重复会话 ID 就停止后续运行。一组调用全部失败也停止，留下不可完整计分的 incomplete 记录。独立上下文和未观察到工具使用不等于掌握完整后台提示。
 

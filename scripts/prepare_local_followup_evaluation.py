@@ -11,7 +11,7 @@ from benchmarks.datasets import sha256, write_json
 from benchmarks.local_followup_evaluation import (
     ARM_CALL_LIMITS, COMMON_INSTRUCTIONS, PROTOCOL, PROTOCOL_RULES, SECOND_INSTRUCTIONS,
     check_packet, file_hashes, first_prompt, load_plan, read_inputs,
-    runtime_code_hashes, second_template, single_prompt,
+    runtime_code_hashes, second_template, single_prompt, verify_imported_core,
 )
 from benchmarks.runner import _code_record
 from scripts.client_review_batch import call, now, server
@@ -73,7 +73,7 @@ async def prepare(inputs_path, refs_dir, output, expected_gold_sha256):
         plan = {"protocol": PROTOCOL, "rules": PROTOCOL_RULES, "created_utc": now(),
                 "partition": inputs[0]["partition"], "cases": cases,
                 "refs_dir": str(refs_dir), "source_sha256": sources,
-                "runtime_code_sha256": code, "code": _code_record(),
+                "runtime_code_sha256": code, "code": _code_record(), "imported_core": verify_imported_core(),
                 "model": MODEL, "reasoning": REASONING,
                 "expected_gold_sha256": expected_gold_sha256,
                 "max_actual_cli_calls": 4 * len(cases), "max_effective_calls_per_arm_case": 2,

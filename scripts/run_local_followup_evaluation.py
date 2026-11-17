@@ -11,7 +11,7 @@ import time
 from academic_guardrail.core.review_store import ReviewStore
 from benchmarks.datasets import sha256, write_json
 from benchmarks.local_followup_evaluation import (
-    check_packet, file_hashes, inspect_receipt, load_packet_view, load_plan, second_prompt,
+    check_packet, file_hashes, inspect_receipt, load_packet_view, load_plan, second_prompt, verify_imported_core,
 )
 from scripts.client_review_batch import call, now, server
 from scripts.codex_review_client import invoke
@@ -54,7 +54,7 @@ async def record_valid(session, runtime, view, receipt, inspection, log):
         return None, str(exc)
 
 
-async def run_async(plan_path, output, timeout=180):
+async def run_async(plan_path, output, timeout=180, *, seen_threads=None):
     if not 1 <= timeout <= 600:
         raise ValueError("Timeout must be between 1 and 600 seconds")
     plan_path, output = Path(plan_path).resolve(), Path(output).resolve()
@@ -68,8 +68,12 @@ async def run_async(plan_path, output, timeout=180):
                 "model": plan["model"], "reasoning": plan["reasoning"], "plan_sha256": plan_hash,
                 "planned_cases": len(plan["cases"]), "completed_cases": 0, "actual_cli_calls": 0,
                 "max_actual_cli_calls": plan["max_actual_cli_calls"], "max_parallel": 3,
-                "timeout_seconds": timeout, "gold_opened": False}
-    attempts, rows, case_results, seen_threads = [], [], [], set()
+                "timeout_seconds": timeout, "gold_opened": False, "imported_core": verify_imported_core()}
+    attempts, rows, case_results = [], [], []
+    # A study orchestrator can share this set across batches; a single CLI batch
+    # still gets its own set. Do not replace a caller's initially empty set.
+    if seen_threads is None:
+        seen_threads = set()
     try:
         frozen, runtime, mcp_output = output / "frozen", output / "runtime", output / "mcp"
         shutil.copytree(plan_path.parent, frozen)
@@ -236,8 +240,8 @@ async def run_async(plan_path, output, timeout=180):
     return manifest
 
 
-def run(plan_path, output, timeout=180):
-    return asyncio.run(run_async(plan_path, output, timeout))
+def run(plan_path, output, timeout=180, *, seen_threads=None):
+    return asyncio.run(run_async(plan_path, output, timeout, seen_threads=seen_threads))
 
 
 def main():

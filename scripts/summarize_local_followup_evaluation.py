@@ -55,7 +55,8 @@ def summarize(batches, destination, case_csv):
     if any(path.is_relative_to(run) for run, _ in batches for path in (destination, case_csv)):
         raise ValueError("Save summaries outside every immutable run directory")
     # Verify ALL runs and their relationships before opening ANY reference labels.
-    loaded = [load_completed_run(run) for run, _ in batches]
+    seen_threads = set()
+    loaded = [load_completed_run(run, seen_threads=seen_threads) for run, _ in batches]
     validate_batch_selection([plan for _, plan, _, _, _ in loaded])
     gold, rows, attempts, outcomes, inputs, batch_records = {"abstract": {}, "full_text": {}}, [], [], {}, {}, []
     for index, ((run, gold_path), (manifest, plan, batch_rows, cases, batch_attempts)) in enumerate(zip(batches, loaded)):

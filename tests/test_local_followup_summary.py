@@ -36,7 +36,8 @@ def test_summary_rejects_incompatible_or_leaking_batches(change):
 
 
 @pytest.mark.asyncio
-async def test_three_batches_recompute_primary_secondary_metrics_and_actual_cost(tmp_path, monkeypatch):
+@pytest.mark.parametrize("duplicate_threads", [False, True])
+async def test_three_batches_recompute_primary_secondary_metrics_and_actual_cost(tmp_path, monkeypatch, duplicate_threads):
     _, prep, runner, _ = modules()
     install_local_transport(monkeypatch, prep, runner)
     batches = []
@@ -54,12 +55,22 @@ async def test_three_batches_recompute_primary_secondary_metrics_and_actual_cost
         with material["source"].open("a", encoding="utf-8") as handle:
             handle.write(f"\nSource fixture {index}.\n")
         plan = await freeze(material, prep)
-        fake_model(monkeypatch, runner, decisions, missing_usage=index == 2)
+        namespace = "" if duplicate_threads else f"batch_{index}_"
+        fake_model(monkeypatch, runner, decisions, missing_usage=index == 2, thread_namespace=namespace)
         run = root / "run"
         await runner.run_async(plan, run)
         batches.append((run, material["gold"]))
     output, case_csv = tmp_path / "summary.json", tmp_path / "cases.csv"
-    result = summary_module().summarize(batches, output, case_csv)
+    module = summary_module()
+    if duplicate_threads:
+        def no_gold(*args):
+            pytest.fail("Cross-batch reused threads must be rejected before gold is read")
+        monkeypatch.setattr(module, "read_gold", no_gold)
+        with pytest.raises(ValueError, match="thread"):
+            module.summarize(batches, output, case_csv)
+        assert not output.exists() and not case_csv.exists()
+        return
+    result = module.summarize(batches, output, case_csv)
     assert result["cases"] == 3 and len(result["batches"]) == 3
     assert result["max_actual_cli_calls"] == 12
     assert result["actual_cost"]["model_calls"] == 11

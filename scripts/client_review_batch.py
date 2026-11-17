@@ -20,6 +20,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from pydantic import BaseModel, ConfigDict, Field
 
+import academic_guardrail
 from academic_guardrail.core.review_models import ClientJudgment
 from benchmarks.datasets import read_records, sha256, unique_by_id, write_json
 from benchmarks.metrics import rate
@@ -51,6 +52,10 @@ def now():
 async def server(batch, output):
     env = {**os.environ, "ACADEMIC_GUARDRAIL_REVIEW_DIR": str(batch / "stored"),
            "RETRACTION_DB_PATH": ":memory:", "PYTHONDONTWRITEBYTECODE": "1"}
+    # Use the same core package as the parent. The local evaluation verifies its
+    # entire source inventory before preparation/run, including installed wheels.
+    core_parent = str(Path(academic_guardrail.__file__).resolve().parent.parent)
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (core_parent, env.get("PYTHONPATH", ""))))
     boundary = output / "boundary_attempts.json"
     params = StdioServerParameters(command=sys.executable,
                                    args=["-X", "utf8", "-c", CHILD, str(boundary), json.dumps(GUARDS)], env=env)

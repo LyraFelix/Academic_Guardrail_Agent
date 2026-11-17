@@ -47,3 +47,23 @@ Evidence directory: `D:/Internship/Academic code/audit_guardrail_20261118_terra_
 This log accompanies the focused evaluation implementation commit, after `7c9bc09`; only the owned adapter, benchmark helpers, evaluation scripts/tests and guide are staged. No credentials, runtime artifacts, source materials or real reference labels belong in the commit.
 
 The parent will run independent specification review, code-quality review and the full suite, build the current wheel, then freeze the approved three 30-case plans. The implementation has not executed those real-source batches. The 360-call total remains a planned cap, not an observed model cost. No research finding about refutation recall or token savings is established by this implementation session.
+
+## Specification-review follow-up
+
+After `0edbe2c`, specification review identified two integrity gaps. Both were reproduced before implementing their fixes:
+
+- A caller may now supply the same `seen_threads` set to each `run_async` or synchronous `run` invocation. Reusing a CLI thread from an earlier batch stops the next batch immediately after that receipt, before further calls. Single-batch CLI behavior is unchanged. The strict completed-run loader accepts the same optional set, and the summary uses one across all verified receipts before opening any gold. Synthetic summary fixtures now use unique per-batch thread IDs except in the explicit rejection test.
+- `verify_imported_core` compares the actual imported `academic_guardrail` package against this checkout's `src/academic_guardrail`: the complete `.py` inventory and content must match, allowing only CRLF-to-LF normalization. Runtime hash checks invoke this guard before preparation creates its output and before a run starts. Plans and run manifests record the imported path, normalization, matching status and normalized hashes. A matching installed wheel and a source import are both valid. The evaluation MCP child wrapper places the verified parent's package directory first on inherited `PYTHONPATH`; a real subprocess import probe verifies this against a competing stale package.
+
+The final focused command is the same three-file pytest selection above, with `--basetemp` ending in `implementation/integrity_final_temp`. Result: **60 passed in 167.71 seconds**, exit code 0, against checkout source. `git diff --check` also passed. This follows 59 passing checks before the final MCP-child regression was added.
+
+Additional evidence under the same implementation evidence directory:
+
+- `integrity_red_tests.txt`: five failures reproduce absent shared-thread support and absent/mismatched imported-core checks.
+- `cross_batch_red_tests.txt`: duplicate cross-batch thread IDs incorrectly reached gold reading before the fix.
+- `child_import_red_tests.txt`: an inherited competing `PYTHONPATH` selected a different package in a real Python subprocess before pinning.
+- `integrity_green_tests.txt`: 59 passing checks for the initial review fixes.
+- `integrity_final_tests.txt`: final 60 passing checks including the child import probe.
+- `imported_core_probe.json`: with `PYTHONPATH` empty, the new study venv's installed wheel matched all 43 core Python files; the retained old MCP-upgrade venv was correctly rejected for `core/ref_store.py`. These probes changed neither environment and made no model calls.
+
+No formal model call or real-source gold access occurred in this follow-up. The parent may make a separately scoped parser correction after these checks; that will require rebuilding the installed study wheel and rerunning final validation before freezing. The guard is expected to reject a newly stale wheel until that rebuild succeeds.

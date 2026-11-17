@@ -16,7 +16,7 @@ from benchmarks.metrics import rate
 from scripts.run_paired_review import load_frozen_packet
 
 
-def load_completed_run(run):
+def load_completed_run(run, *, seen_threads=None):
     manifest = json.loads((run / "manifest.json").read_bytes())
     if manifest.get("status") != "completed":
         raise ValueError("Incomplete run is not eligible for full paired scoring")
@@ -24,6 +24,9 @@ def load_completed_run(run):
     plan, _, _ = load_plan(run / "frozen" / "plan.json")
     if any(manifest[key] != plan[key] for key in ("protocol", "model", "reasoning")):
         raise ValueError("Run configuration differs from its frozen plan")
+    if any(manifest.get("imported_core", {}).get(key) != plan["imported_core"][key]
+           for key in ("matches_checkout", "normalization", "normalized_sha256")):
+        raise ValueError("Run imported core verification differs from its frozen plan")
     if sha256(run / "plan.json") != manifest["plan_sha256"] or (run / "plan.json").read_bytes() != (
             run / "frozen" / "plan.json").read_bytes():
         raise ValueError("Run plan checksum differs from the frozen protocol")
@@ -51,7 +54,8 @@ def load_completed_run(run):
     plan_by_id = {row["id"]: row for row in plan["cases"]}
     receipts = {name: json.loads((relative_file(run, name) / "observed_receipt.json").read_bytes())
                 for name in indexed}
-    seen_threads = set()
+    if seen_threads is None:
+        seen_threads = set()
     for attempt in attempts:
         directory = relative_file(run, attempt["attempt"])
         request = requests_by_attempt[attempt["attempt"]]

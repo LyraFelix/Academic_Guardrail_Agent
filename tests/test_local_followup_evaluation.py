@@ -6,6 +6,8 @@ import importlib
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import threading
 
 import pytest
@@ -90,7 +92,7 @@ def install_local_transport(monkeypatch, prep, runner):
     monkeypatch.setattr(runner, "cli_version", lambda: "offline fixture")
 
 
-def fake_model(monkeypatch, runner, decisions, *, missing_usage=False):
+def fake_model(monkeypatch, runner, decisions, *, missing_usage=False, thread_namespace=""):
     """Return immutable raw responses whose semantics are controlled by each test."""
     calls = []
 
@@ -117,7 +119,7 @@ def fake_model(monkeypatch, runner, decisions, *, missing_usage=False):
             response["missing_evidence"][0]["claim_part"] = "absent claim substring"
         receipt = {"requested_model": MODEL, "reasoning": REASONING, "elapsed_seconds": 0.5,
                    "returncode": 0, "error": None, "event_stream_valid": True, "response": response,
-                   "thread_ids": [f"thread-{destination.name}"], "completed_turns": 1,
+                   "thread_ids": [f"thread-{thread_namespace}{destination.name}"], "completed_turns": 1,
                    "tool_items": [], "failed_turns": 0, "warnings": [],
                    "usage": None if missing_usage else {"input_tokens": 100, "cached_input_tokens": 0,
                                                          "output_tokens": 20}}
@@ -126,7 +128,7 @@ def fake_model(monkeypatch, runner, decisions, *, missing_usage=False):
         if choice == "TOOLS":
             receipt.update(error="cli_or_turn_failure", tool_items=["command_execution"])
         if choice == "DUPLICATE_THREAD":
-            receipt["thread_ids"] = ["thread-attempt_000_initial"]
+            receipt["thread_ids"] = [f"thread-{thread_namespace}attempt_000_initial"]
         calls.append((stage, receipt))
         for name, value in (("receipt.json", receipt), ("response.json", response),
                             ("command.json", ["fake-model-no-external-call"])):
@@ -500,3 +502,96 @@ def test_token_breakdown_requires_complete_usage_and_does_not_add_reasoning_twic
     assert partial["reported_tokens"]["cached_input_tokens"] is None
     assert partial["reported_tokens"]["uncached_input_tokens"] is None
     assert partial["reported_tokens"]["reasoning_output_tokens"] is None
+
+
+@pytest.mark.asyncio
+async def test_shared_thread_set_stops_reuse_before_more_calls(material, monkeypatch):
+    _, prep, runner, _ = modules()
+    install_local_transport(monkeypatch, prep, runner)
+    plan = await freeze(material, prep)
+    calls = fake_model(monkeypatch, runner, {"initial": "NEI"})
+    study_threads = set()
+    await runner.run_async(plan, material["root"] / "run_first", seen_threads=study_threads)
+    assert len(study_threads) == len(calls) == 4
+    with pytest.raises(RuntimeError, match="thread reused"):
+        await runner.run_async(plan, material["root"] / "run_second", seen_threads=study_threads)
+    assert len(calls) == 5  # Only the duplicated initial call ran in the next batch.
+    manifest = json.loads((material["root"] / "run_second" / "manifest.json").read_bytes())
+    assert manifest["status"] == "incomplete" and manifest["actual_cli_calls"] == 1
+
+
+def copied_core(tmp_path, monkeypatch):
+    import academic_guardrail
+    helper, _, _, _ = modules()
+    source = Path(helper.__file__).resolve().parents[1] / "src" / "academic_guardrail"
+    imported = tmp_path / "installed_core"
+    for path in source.rglob("*.py"):
+        destination = imported / path.relative_to(source)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(path.read_bytes().replace(b"\r\n", b"\n"))
+    monkeypatch.setattr(academic_guardrail, "__file__", str(imported / "__init__.py"))
+    return imported
+
+
+def test_matching_imported_core_allows_different_line_endings(tmp_path, monkeypatch):
+    helper, _, _, _ = modules()
+    imported = copied_core(tmp_path, monkeypatch)
+    for path in imported.rglob("*.py"):
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+    record = helper.verify_imported_core()
+    assert record["matches_checkout"] is True
+    assert record["path"] == str(imported.resolve())
+    assert "core/ref_store.py" in record["normalized_sha256"]
+    assert helper.runtime_code_hashes()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["content", "missing", "extra"])
+async def test_stale_imported_core_blocks_prepare_and_run(material, monkeypatch, change):
+    helper, prep, runner, _ = modules()
+    install_local_transport(monkeypatch, prep, runner)
+    plan = await freeze(material, prep)
+    calls = fake_model(monkeypatch, runner, {"initial": "NEI"})
+    imported = copied_core(material["root"], monkeypatch)
+    target = imported / "core" / "ref_store.py"
+    if change == "content":
+        target.write_bytes(target.read_bytes() + b"\n# An old installed implementation.\n")
+    elif change == "missing":
+        target.unlink()
+    else:
+        (imported / "unexpected_module.py").write_text("pass\n", encoding="utf-8")
+    new_prepared = material["root"] / "stale_prepared"
+    with pytest.raises(ValueError, match="[Ii]mported core"):
+        await prep.prepare(material["inputs"], material["refs"], new_prepared, material["gold_hash"])
+    with pytest.raises(ValueError, match="[Ii]mported core"):
+        await runner.run_async(plan, material["root"] / "stale_run")
+    assert calls == [] and not new_prepared.exists()
+
+
+@pytest.mark.asyncio
+async def test_mcp_child_imports_verified_parent_core_before_inherited_pythonpath(tmp_path, monkeypatch):
+    import academic_guardrail
+    client = importlib.import_module("scripts.client_review_batch")
+    shadow = tmp_path / "shadow" / "academic_guardrail"
+    shadow.mkdir(parents=True)
+    (shadow / "__init__.py").write_text("# A competing stale installed package.\n", encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(shadow.parent))
+    expected = Path(academic_guardrail.__file__).resolve().parent
+
+    class StopBeforeMCP(Exception):
+        pass
+
+    @asynccontextmanager
+    async def inspect_child(params):
+        # Use the real subprocess import mechanism, with the wrapper's exact env.
+        result = subprocess.run([sys.executable, "-c",
+                                 "import academic_guardrail; print(academic_guardrail.__file__)"],
+                                env=params.env, cwd=tmp_path, text=True, capture_output=True, check=True)
+        assert Path(result.stdout.strip()).resolve().parent == expected
+        raise StopBeforeMCP
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(client, "stdio_client", inspect_child)
+    with pytest.raises(StopBeforeMCP):
+        async with client.server(tmp_path, tmp_path):
+            pytest.fail("The import probe should stop before starting an MCP session")

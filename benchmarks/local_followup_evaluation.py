@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 
+import academic_guardrail
 from academic_guardrail.core.review_models import ClientJudgment
 from academic_guardrail.core.review_store import ReviewStore
 from benchmarks.client_comparison import DIRECT_INSTRUCTIONS, OUTPUT_INSTRUCTIONS, shared_evidence
@@ -58,8 +59,30 @@ PROTOCOL_RULES = {
 TOKEN_KEYS = ("input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens")
 
 
+def verify_imported_core():
+    """Allow a matching wheel or source import, but never silently run stale core code."""
+    expected = Path(__file__).resolve().parents[1] / "src" / "academic_guardrail"
+    imported = Path(academic_guardrail.__file__).resolve().parent
+
+    def normalized_hashes(directory):
+        # Windows checkouts and wheels may differ only in CRLF versus LF. Keep
+        # every other byte and require the complete .py inventory to match.
+        return {path.relative_to(directory).as_posix():
+                hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+                for path in sorted(directory.rglob("*.py"))}
+
+    expected_hashes, imported_hashes = normalized_hashes(expected), normalized_hashes(imported)
+    if not expected_hashes or imported_hashes != expected_hashes:
+        changed = sorted(name for name in set(expected_hashes) | set(imported_hashes)
+                         if expected_hashes.get(name) != imported_hashes.get(name))
+        raise ValueError("Imported core differs from checkout Python sources: " + ", ".join(changed[:5]))
+    return {"path": str(imported), "matches_checkout": True,
+            "normalization": "CRLF to LF; complete .py inventory", "normalized_sha256": imported_hashes}
+
+
 def runtime_code_hashes():
     """Pin source bytes, including imported runtime helpers, rather than Git HEAD alone."""
+    verify_imported_core()
     root = Path(__file__).resolve().parents[1]
     paths = [path for folder in ("src", "scripts", "benchmarks")
              for path in (root / folder).rglob("*.py")]
@@ -159,6 +182,10 @@ def load_plan(plan_path):
         raise ValueError("Frozen model configuration differs from this adapter")
     if plan["runtime_code_sha256"] != runtime_code_hashes():
         raise ValueError("Runtime source code changed after protocol freezing")
+    imported = verify_imported_core()
+    if any(plan.get("imported_core", {}).get(key) != imported[key]
+           for key in ("matches_checkout", "normalization", "normalized_sha256")):
+        raise ValueError("Frozen imported core verification differs from the runtime package")
     schema = json.loads((base / "schema.json").read_bytes())
     if schema != strict_schema(ClientJudgment.model_json_schema()):
         raise ValueError("Frozen schema differs from the current contract")
