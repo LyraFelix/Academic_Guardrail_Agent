@@ -43,7 +43,9 @@ python -m scripts.run_local_followup_evaluation --plan benchmarks/runs/local_dev
 python -m scripts.score_local_followup_evaluation --run benchmarks/runs/local_dev_run_01 --gold benchmarks/data/local_followup/dev_gold.jsonl --output benchmarks/runs/local_dev_scores_01.json
 ```
 
-90 例安排为 `development`、`validation_a`、`validation_b` 三个各 30 例的分区，论文互不重叠。每批分别执行以上三步，保持全部计划的协议、模型和代码一致；每批最多生成 30 条报告记录，适用现有每次 50 条的报告上限。验证样本来自另外的论文，不能看过其参考答案后再修改检索或提示，并继续称其为未使用的验证集。
+90 例安排为 `development`、`validation_a`、`validation_b` 三个各 30 例的分区，论文互不重叠。上面的三条命令只说明单批接口。正式研究必须先完成三批的 prepare，核对全部计划共 90 例、360 次调用上限、相同协议/模型/代码和互不重叠的论文，再执行三批 run，最后才 score 和汇总；不能把 prepare/run/score 三步逐批循环，也不能根据第一批答案调整后两批。保留首个调用之前生成的全批次冻结清单及每个 plan 的哈希。
+
+每批最多生成 30 条报告记录，适用现有每次 50 条的报告上限。验证样本来自另外的论文，不能看过其参考答案后再修改检索或提示，并继续称其为未使用的验证集。单批运行器校验本批计划；全批次冻结和总预算必须由研究执行清单检查，汇总器事后拒绝混合配置或跨分区论文重叠。
 
 全部完成后汇总实际运行目录和各自的标签文件：
 
