@@ -17,10 +17,12 @@ NUMBERED_REFERENCE = re.compile(r"(?im)^[ \t]*\[\d+\][ \t]+[^\n]*(?:\.\s+|10\.\d
 ABSTRACT = re.compile(r"(?im)^[ \t]*(?:abstract|摘要)[ \t]*[:：]?[ \t]*\n?")
 SECTION = re.compile(r"(?im)^[ \t]*(?:\d+[.)]?\s+)?(?:introduction|methods|results|discussion|引言|方法|结果|讨论)\b")
 # PDF line wrapping can place an ordinary word such as "results" at line start.
-# Only a complete heading may end the abstract; sentence continuations may not.
+# Unnumbered headings must occupy the whole line. Numbered headings may have
+# subtitles, such as "1. Introduction and Motivating Work".
+SECTION_NAMES = r"(?:introduction|methods|results|discussion|引言|方法|结果|讨论)"
 ABSTRACT_SECTION_END = re.compile(
-    r"(?im)^[ \t]*(?:\d+[.)]?[ \t]+)?"
-    r"(?:introduction|methods|results|discussion|引言|方法|结果|讨论)[ \t]*[:：]?[ \t]*$"
+    rf"(?im)^[ \t]*(?:\d+(?:\.\d+)*[.)]?[ \t]+{SECTION_NAMES}\b[^\n]*"
+    rf"|{SECTION_NAMES}[ \t]*[:：]?[ \t]*)$"
 )
 
 

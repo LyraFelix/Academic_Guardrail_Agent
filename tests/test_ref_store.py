@@ -12,7 +12,7 @@ from academic_guardrail.core.ref_store import LocalRefStore
     "introduction of image transformers.",
     "discussion of their practical implications.",
 ])
-@pytest.mark.parametrize("heading", ["1. Introduction", "INTRODUCTION"])
+@pytest.mark.parametrize("heading", ["1. Introduction", "INTRODUCTION", "1. Introduction and Motivating Work"])
 def test_abstract_line_wrap_is_not_a_section_heading(tmp_path, continuation, heading):
     """PDF line wrapping must not turn a sentence fragment into a heading."""
     abstract = "We report new\n" + continuation + "\nThese findings motivate further study."
