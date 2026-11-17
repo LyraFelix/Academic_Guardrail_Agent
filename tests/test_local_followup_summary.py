@@ -14,7 +14,7 @@ def summary_module():
 
 
 def selection_plan(identifier, partition, paper_id):
-    return {"protocol": "local_evidence_followup_v2", "model": "gpt-6.1-terra", "reasoning": "max",
+    return {"protocol": "local_evidence_followup_v3", "model": "gpt-6.1-terra", "reasoning": "max",
             "partition": partition, "source_sha256": {f"/{paper_id}.txt": paper_id},
             "cases": [{"id": identifier, "input": {"paper_id": paper_id, "source_path": f"/{paper_id}.txt"}}]}
 

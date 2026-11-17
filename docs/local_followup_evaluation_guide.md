@@ -4,7 +4,7 @@
 
 ## 四个结果各代表什么
 
-当前协议为 `local_evidence_followup_v2`，统一使用 `gpt-6.1-terra` 和 `max` 推理设置。每条论断先只读摘要，得到一次共同初判；随后独立执行全文主对照、两阶段全文次对照，以及符合条件的本地补查终判。
+当前协议为 `local_evidence_followup_v3`，统一使用 `gpt-6.1-terra` 和 `max` 推理设置。每条论断先只读摘要，得到一次共同初判；随后独立执行全文主对照、两阶段全文次对照，以及符合条件的本地补查终判。
 
 | 结果 | 模型拿到什么 | 每例最多几次调用 |
 | --- | --- | ---: |
@@ -15,9 +15,17 @@
 
 两个全文对照每条都会执行。主对照不接收摘要初判，也不接收任何其他臂的答案；次对照只接收原始摘要初判。本地补查仅对已成功记录、带具体缺口的证据不足或不确定判断补查一次；已得出明确结论的样本沿用初始结果。缺口缺失、记录被拒或检索失败也沿用初始原始结果，保留在分母里。
 
-N 条样本最多实际执行 **4N** 次调用；全部无需补查时是 3N 次。90 条样本的冻结上限是 360 次。实际总成本为摘要初判、独立全文、两阶段全文终判、补查终判四类调用之和，摘要初判只计一次。比较两阶段流程成本时，各自包含摘要初判；独立全文主对照只计自己的一次调用。摘要臂只是共同起点的诊断结果。
+N 条样本按四臂结构最多执行 **4N** 次调用；全部无需补查时是 3N 次。本研究的实际总上限仍为 360 次，包含下文披露的首轮中止前 8 次调用，因此 v3 最多还有 352 次，不能把两轮预算相加。实际总成本为摘要初判、独立全文、两阶段全文终判、补查终判四类调用之和，摘要初判只计一次。比较两阶段流程成本时，各自包含摘要初判；独立全文主对照只计自己的一次调用。摘要臂只是共同起点的诊断结果。
 
 主比较回答“摘要加局部补查，相对于一次独立全文判断，结果和 token 有何变化”；次比较保持共同初判，进一步比较全文与检索选文的差异。四臂使用同一模型、输出格式、语义说明和原论断。初判之后最多三个终判并发，每次调用都有新且唯一的 CLI 会话。全文对照使用项目解析和编号后的原文，是受控结构化客户端对照；提示不包含 MCP 规则分数或推荐标签。
+
+四种提示都附带同一份 `source_identity = {title, doi}`，直接来自已固定证据包的 `local_review.source`。它只标识所提供的是哪篇论文，不证明论断、方法或结果；语义判断仍以原有证据段落为依据。提示不加入路径、来源状态、置信度或规则提示。
+
+## 为什么中止首轮并改为 v3
+
+首轮正式运行开始后，前两个开发样本共执行了 8 次调用。第一个回答暴露了输入缺陷：旧提示只保留论断与证据段落，丢弃了已匹配论文的标题和 DOI；RoBERTa 摘要本身没有写出 RoBERTa 名称，模型因而报告实体对应信息不足。第二个开发样本当时已经开始。执行器随后在下一例前被代码变更检查停止，8 份原始收据及全部费用均保留。这是**中止的首轮正式调用**，不是事先规划的试运行。
+
+v3 只补齐对所有臂相同的论文身份输入，不修改 90 条论断、参考标签、正文证据、检索规则或判断标准。修复来自前两个开发样本的观察；这两个样本已经暴露，不能再称为未见开发数据。未查看验证分区输出。旧冻结目录和首轮收据保持原样，不能并入 v3 语义结果；其 8 次调用和 token 仍计入研究总成本及 360 次硬上限。所有 v3 计划必须在修复与审查结束后重新冻结。若剩余预算不能覆盖后续批次，执行器必须保留未完成状态，不能删除已发生的调用来凑齐分母。
 
 ## 输入和参考标签分开
 
@@ -38,12 +46,12 @@ N 条样本最多实际执行 **4N** 次调用；全部无需补查时是 3N 次
 在仓库根目录、已安装项目依赖的环境中执行。运行模型还需要已安装并登录的 Codex CLI；复用现有客户端，不读取或打印认证文件。
 
 ```powershell
-python -m scripts.prepare_local_followup_evaluation --inputs benchmarks/data/local_followup/dev_inputs.jsonl --refs-dir benchmarks/data/local_followup/refs --expected-gold-sha256 <事先记录的dev标签SHA256> --output benchmarks/runs/local_dev_plan_01
-python -m scripts.run_local_followup_evaluation --plan benchmarks/runs/local_dev_plan_01/plan.json --output benchmarks/runs/local_dev_run_01 --timeout 180
-python -m scripts.score_local_followup_evaluation --run benchmarks/runs/local_dev_run_01 --gold benchmarks/data/local_followup/dev_gold.jsonl --output benchmarks/runs/local_dev_scores_01.json
+python -m scripts.prepare_local_followup_evaluation --inputs benchmarks/data/local_followup/dev_inputs.jsonl --refs-dir benchmarks/data/local_followup/refs --expected-gold-sha256 <事先记录的dev标签SHA256> --output benchmarks/runs/local_dev_plan_02
+python -m scripts.run_local_followup_evaluation --plan benchmarks/runs/local_dev_plan_02/plan.json --output benchmarks/runs/local_dev_run_02 --timeout 180
+python -m scripts.score_local_followup_evaluation --run benchmarks/runs/local_dev_run_02 --gold benchmarks/data/local_followup/dev_gold.jsonl --output benchmarks/runs/local_dev_scores_02.json
 ```
 
-90 例安排为 `development`、`validation_a`、`validation_b` 三个各 30 例的分区，论文互不重叠。上面的三条命令只说明单批接口。正式研究必须先完成三批的 prepare，核对全部计划共 90 例、360 次调用上限、相同协议/模型/代码和互不重叠的论文，再执行三批 run，最后才 score 和汇总；不能把 prepare/run/score 三步逐批循环，也不能根据第一批答案调整后两批。保留首个调用之前生成的全批次冻结清单及每个 plan 的哈希。
+90 例安排为 `development`、`validation_a`、`validation_b` 三个各 30 例的分区，论文互不重叠。上面的三条命令只说明单批接口。v3 必须先完成三批的 prepare，核对共 90 例、相同协议/模型/代码和互不重叠的论文，并从研究 360 次硬上限扣除首轮已发生的 8 次，再执行三批 run，最后才 score 和汇总；不能把 prepare/run/score 三步逐批循环，也不能在 v3 开始后根据第一批答案调整后两批。保留首个 v3 调用之前生成的全批次冻结清单、每个 plan 的哈希和首轮成本收据。
 
 每批最多生成 30 条报告记录，适用现有每次 50 条的报告上限。验证样本来自另外的论文，不能看过其参考答案后再修改检索或提示，并继续称其为未使用的验证集。单批运行器校验本批计划；全批次冻结和总预算必须由研究执行清单检查，汇总器事后拒绝混合配置或跨分区论文重叠。
 
@@ -52,7 +60,7 @@ python -m scripts.score_local_followup_evaluation --run benchmarks/runs/local_de
 全部完成后汇总实际运行目录和各自的标签文件：
 
 ```powershell
-python -m scripts.summarize_local_followup_evaluation --batch benchmarks/runs/local_dev_run_01 benchmarks/data/local_followup/dev_gold.jsonl --batch benchmarks/runs/local_validation_a_run_01 benchmarks/data/local_followup/validation_a_gold.jsonl --batch benchmarks/runs/local_validation_b_run_01 benchmarks/data/local_followup/validation_b_gold.jsonl --output benchmarks/runs/local_combined_scores_01.json --cases-csv benchmarks/runs/local_combined_cases_01.csv
+python -m scripts.summarize_local_followup_evaluation --batch benchmarks/runs/local_dev_run_02 benchmarks/data/local_followup/dev_gold.jsonl --batch benchmarks/runs/local_validation_a_run_02 benchmarks/data/local_followup/validation_a_gold.jsonl --batch benchmarks/runs/local_validation_b_run_02 benchmarks/data/local_followup/validation_b_gold.jsonl --output benchmarks/runs/local_combined_scores_02.json --cases-csv benchmarks/runs/local_combined_cases_02.csv
 ```
 
 这里的路径是示例，须换成实际冻结材料路径。汇总器支持任意非空、互不重叠的批次列表；本次研究仍按事先批准的三批 90 例和总计 360 次调用上限执行。汇总器先调用严格运行校验，再打开标签，重新计算结果，不读取可修改的历史 score JSON。它拒绝模型、推理或协议混用、重复 case ID、跨批次会话 ID 复用，以及同一论文或同源字节跨分区。可以另传两个验证分区，得到单独的合并验证结果；不要把开发集混入验证分母。
@@ -63,7 +71,7 @@ python -m scripts.summarize_local_followup_evaluation --batch benchmarks/runs/lo
 
 模型与推理配置只在 `scripts/codex_review_client.py` 定义，输出提示中的 `client_model` 也从这个常量生成。改变模型、提示、检索或运行代码后必须建立新计划，不能沿用旧冻结目录。运行器不修复答案，也不重试失败判断；CLI 内部是否重试网络请求不能由调用次数推断。请求关闭其他工具、两种 multi-agent 功能、记忆和技能，一旦实际观察到工具调用、无法解析的事件或重复会话 ID 就停止后续运行。一组调用全部失败也停止，留下不可完整计分的 incomplete 记录。独立上下文和未观察到工具使用不等于掌握完整后台提示。
 
-原始 PDF、整理文本、标签和模型运行记录保存在本地。真实材料记录必须包含版本明确的原始链接、文件哈希、提取和整理方式，以及从整理文本回到原文的坐标映射。**旧版冻结输出必须在匹配其源代码和环境的历史 checkout 中重计分**，当前 v2 代码会拒绝旧协议或旧代码指纹。不要修改旧运行来让新代码接受。再次调用模型不保证答案相同。
+原始 PDF、整理文本、标签和模型运行记录保存在本地。真实材料记录必须包含版本明确的原始链接、文件哈希、提取和整理方式，以及从整理文本回到原文的坐标映射。**旧版冻结输出必须在匹配其源代码和环境的历史 checkout 中重计分**，当前 v3 代码会拒绝旧协议或旧代码指纹。不要修改旧运行来让新代码接受。再次调用模型不保证答案相同。
 
 ## 先看正确性，再看节省
 

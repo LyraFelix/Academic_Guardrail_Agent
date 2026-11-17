@@ -76,13 +76,16 @@ def load_completed_run(run, *, seen_threads=None):
             raise ValueError("Successful attempt lacks its unique model thread ID")
         packet = load_frozen_packet(run / "runtime", attempt)
         case, frozen_case = cases_by_id[attempt["id"]], plan_by_id[attempt["id"]]
+        context = ReviewStore(run / "runtime" / "stored").load_context(packet.packet_id)
+        initial_view = load_packet_view(run / "frozen", frozen_case["abstract_packet"])
+        if context is None or context.source.model_dump(mode="json") != initial_view["local_review"]["source"]:
+            raise ValueError("Request source identity differs from its pinned paper")
         if attempt["stage"] in {"initial", "fulltext_single", "fulltext_direct"}:
             key = "abstract_packet" if attempt["stage"] == "initial" else "full_text_packet"
             frozen_view = load_packet_view(run / "frozen", frozen_case[key])
             if any(attempt[key] != frozen_view[key] for key in ("packet_id", "packet_sha256")):
                 raise ValueError("Request used a different initial or full-text packet")
         else:
-            context = ReviewStore(run / "runtime" / "stored").load_context(packet.packet_id)
             initial_record = case["initial_record"]
             if context is None or initial_record is None or context.parent_review_id != initial_record["review_id"] or (
                     context.parent_review_sha256 != initial_record["review_sha256"]):
@@ -93,7 +96,7 @@ def load_completed_run(run, *, seen_threads=None):
         prompt_bytes = relative_file(run, attempt["prompt_file"]).read_bytes()
         if bytes_digest(prompt_bytes) != attempt["prompt_sha256"]:
             raise ValueError("Dynamic prompt checksum changed")
-        view = packet.model_dump(mode="json")
+        view = {**packet.model_dump(mode="json"), "local_review": context.model_dump(mode="json")}
         if attempt["stage"] == "initial":
             expected_prompt = first_prompt(view)
         elif attempt["stage"] == "fulltext_single":

@@ -243,9 +243,15 @@ async def test_full_workflow_preserves_prepared_store_and_accounts_shared_cost(m
     assert manifest["actual_cli_calls"] == len(calls) == 4
     assert manifest["max_parallel"] == 3
     assert helper.file_hashes(plan.parent) == before
+    frozen = json.loads(plan.read_bytes())
+    source = helper.load_packet_view(plan.parent, frozen["cases"][0]["abstract_packet"])["local_review"]["source"]
+    identity = {key: source[key] for key in ("title", "doi")}
     for line in (run / "requests.jsonl").read_text().splitlines():
         request = json.loads(line)
         assert (run / request["prompt_file"]).read_bytes() == (run / request["attempt"] / "prompt.txt").read_bytes()
+        prompt = (run / request["prompt_file"]).read_text(encoding="utf-8")
+        payload = json.loads(prompt.split("SOURCE_DATA_JSON\n", 1)[1].split("\n\nPRIOR_JUDGMENT_JSON", 1)[0])
+        assert payload["source_identity"] == identity
     report = scorer.score(run, material["gold"], material["root"] / "score.json")
     assert report["actual_cost"]["model_calls"] == 4
     assert report["arms"]["fulltext_single"]["cost"]["model_calls"] == 1
@@ -399,7 +405,7 @@ async def test_scorer_rejects_changed_or_duplicate_results_before_opening_gold(m
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tamper", ["request", "prompt", "single_prompt"])
+@pytest.mark.parametrize("tamper", ["request", "prompt", "single_prompt", "source_identity"])
 async def test_scorer_rechecks_request_and_rendered_prompt_before_gold(material, monkeypatch, tamper):
     helper, prep, runner, scorer = modules()
     install_local_transport(monkeypatch, prep, runner)
@@ -412,9 +418,15 @@ async def test_scorer_rechecks_request_and_rendered_prompt_before_gold(material,
         requests[0]["stage"] = "unrecorded_stage"
     else:
         attempts = [json.loads(line) for line in (run / "attempts.jsonl").read_text().splitlines()]
-        stage = "fulltext_single" if tamper == "single_prompt" else "fulltext_direct"
+        stage = "fulltext_single" if tamper in {"single_prompt", "source_identity"} else "fulltext_direct"
         target = next(row for row in attempts if row["stage"] == stage)
         altered = b"An altered prompt must never be silently scored."
+        if tamper == "source_identity":
+            prompt = (run / target["prompt_file"]).read_text(encoding="utf-8")
+            prefix, data = prompt.split("SOURCE_DATA_JSON\n", 1)
+            payload = json.loads(data)
+            payload["source_identity"]["title"] = "A substituted paper"
+            altered = (prefix + "SOURCE_DATA_JSON\n" + json.dumps(payload, ensure_ascii=False)).encode("utf-8")
         (run / target["prompt_file"]).write_bytes(altered)
         (run / target["attempt"] / "prompt.txt").write_bytes(altered)
         target["prompt_sha256"] = hashlib.sha256(altered).hexdigest()
@@ -437,7 +449,8 @@ def test_single_fulltext_is_independent_and_model_identity_is_shared():
     from benchmarks.client_comparison import OUTPUT_INSTRUCTIONS
     from scripts.codex_review_client import MODEL, REASONING, command_for
     helper, _, _, _ = modules()
-    packet = {"claim": "An original claim", "evidence": [{"id": "e1", "text": "Complete text"}]}
+    packet = {"claim": "An original claim", "evidence": [{"id": "e1", "text": "Complete text"}],
+              "local_review": {"source": {"title": "Synthetic paper", "doi": None}}}
     prompt = helper.single_prompt(packet)
     assert "PRIOR_JUDGMENT" not in prompt
     assert "previous judgment" not in prompt.lower()
@@ -448,6 +461,49 @@ def test_single_fulltext_is_independent_and_model_identity_is_shared():
     assert command[command.index("--model") + 1] == MODEL
     assert 'model_reasoning_effort="max"' in command
     assert "multi_agent_v2" in command
+
+
+def test_all_local_prompt_forms_include_only_the_same_pinned_source_identity():
+    helper, _, _, _ = modules()
+    identity = {"title": "RoBERTa: Synthetic identity fixture", "doi": "10.0000/synthetic.roberta"}
+    abstract = {"claim": "RoBERTa reports that the baseline was undertrained.",
+                "evidence": [{"id": "e1", "text": "We report that the baseline was undertrained."}],
+                "local_review": {"source": {**identity, "path": "secret-source-path", "sha256": "secret-source-hash"},
+                                 "retrieval_status": "secret-retrieval-status"},
+                "rule_summary": "secret-rule-hint", "confidence": "secret-confidence"}
+    assert "RoBERTa" not in abstract["evidence"][0]["text"]
+    full = {**abstract, "evidence": abstract["evidence"] + [{"id": "e2", "text": "Additional body evidence."}]}
+    followup = {**abstract, "evidence": full["evidence"],
+                "local_review": {**abstract["local_review"], "round": 1}}
+    prior = {"rationale": "prior-only-sentinel"}
+    prompts = [helper.first_prompt(abstract), helper.single_prompt(full),
+               helper.second_prompt(full, prior), helper.second_prompt(followup, prior)]
+    for index, prompt in enumerate(prompts):
+        payload = json.loads(prompt.split("SOURCE_DATA_JSON\n", 1)[1].split("\n\nPRIOR_JUDGMENT_JSON", 1)[0])
+        assert set(payload) == {"claim", "evidence", "source_identity"}
+        assert payload["source_identity"] == identity
+        assert "secret-" not in prompt
+        assert ("prior-only-sentinel" in prompt) == (index >= 2)
+        assert ("PRIOR_JUDGMENT_JSON" in prompt) == (index >= 2)
+        assert "not as proof" in prompt
+
+
+@pytest.mark.asyncio
+async def test_v2_protocol_is_rejected_after_source_identity_change(material, monkeypatch):
+    helper, prep, runner, _ = modules()
+    install_local_transport(monkeypatch, prep, runner)
+    plan_path = await freeze(material, prep)
+    plan = json.loads(plan_path.read_bytes())
+    plan["protocol"] = "local_evidence_followup_v2"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+    manifest_path = plan_path.parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_bytes())
+    manifest["files"] = helper.file_hashes(plan_path.parent)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    calls = fake_model(monkeypatch, runner, {"initial": "NEI"})
+    with pytest.raises(ValueError, match="protocol"):
+        await runner.run_async(plan_path, material["root"] / "run")
+    assert calls == []
 
 
 @pytest.mark.asyncio

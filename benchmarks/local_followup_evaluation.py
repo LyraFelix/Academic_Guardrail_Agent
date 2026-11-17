@@ -18,11 +18,13 @@ from scripts.codex_review_client import MODEL, REASONING, strict_schema
 from scripts.run_paired_review import inspect_answer, load_frozen_packet
 
 
-PROTOCOL = "local_evidence_followup_v2"
+PROTOCOL = "local_evidence_followup_v3"
 ARMS = ("abstract_only", "fulltext_single", "fulltext_direct", "local_followup")
 ARM_CALL_LIMITS = dict(zip(ARMS, (1, 1, 2, 2)))
 PRIOR_TOKEN = "<FROZEN_PRIOR_JUDGMENT_JSON>"
 COMMON_INSTRUCTIONS = DIRECT_INSTRUCTIONS + "\n\n" + OUTPUT_INSTRUCTIONS + """
+The source_identity metadata identifies the supplied paper only. Use it for paper
+identity, not as proof of any claim; judge methods and results from the evidence.
 SUPPORTED and CONTRADICTED require at least one exact quote. Do not strengthen
 the original claim by adding only, all, or exclusivity conditions it does not state.
 For unresolved necessary facts, use missing_evidence (at most four entries).
@@ -48,6 +50,7 @@ PROTOCOL_RULES = {
     "no_followup": "Carry the initial raw result; missing gap, record rejection or lookup failure stays in the denominator.",
     "budget": "At most 4N actual CLI calls; single-call full text costs one, each two-stage workflow at most two; no repair or retry.",
     "common_rules": "Identical schema, semantic instructions and offline validator; no MCP heuristic hints to either arm.",
+    "source_identity": "Every arm receives the same pinned source title and DOI for paper identification only, not semantic proof.",
     "isolation": "Fresh unique CLI thread per invocation; no model tools; abort on unverifiable stream, tool use or duplicate thread.",
     "failure_stop": "Stop after a call group in which every invocation failed; retain an incomplete manifest.",
     "primary": "Local follow-up versus independent single-call full text; raw final labels including rejected records and failed cases.",
@@ -123,8 +126,14 @@ def read_inputs(path):
     return rows
 
 
+def local_evidence_payload(packet):
+    """Expose only paper identity alongside the existing claim and evidence text."""
+    source = packet["local_review"]["source"]
+    return {**shared_evidence(packet), "source_identity": {"title": source["title"], "doi": source["doi"]}}
+
+
 def first_prompt(packet):
-    return COMMON_INSTRUCTIONS + "\n\nSOURCE_DATA_JSON\n" + json.dumps(shared_evidence(packet), ensure_ascii=False)
+    return COMMON_INSTRUCTIONS + "\n\nSOURCE_DATA_JSON\n" + json.dumps(local_evidence_payload(packet), ensure_ascii=False)
 
 
 def single_prompt(packet):
@@ -134,7 +143,7 @@ def single_prompt(packet):
 
 def second_template(packet):
     return (COMMON_INSTRUCTIONS + SECOND_INSTRUCTIONS + "\n\nSOURCE_DATA_JSON\n"
-            + json.dumps(shared_evidence(packet), ensure_ascii=False)
+            + json.dumps(local_evidence_payload(packet), ensure_ascii=False)
             + "\n\nPRIOR_JUDGMENT_JSON\n" + PRIOR_TOKEN)
 
 

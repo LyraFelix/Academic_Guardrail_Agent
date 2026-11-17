@@ -67,3 +67,23 @@ Additional evidence under the same implementation evidence directory:
 - `imported_core_probe.json`: with `PYTHONPATH` empty, the new study venv's installed wheel matched all 43 core Python files; the retained old MCP-upgrade venv was correctly rejected for `core/ref_store.py`. These probes changed neither environment and made no model calls.
 
 No formal model call or real-source gold access occurred in this follow-up. The parent may make a separately scoped parser correction after these checks; that will require rebuilding the installed study wheel and rerunning final validation before freezing. The guard is expected to reject a newly stale wheel until that rebuild succeeds.
+
+## v3 source-identity correction after the aborted initial round
+
+Baseline: `cfe785b`. On resuming this implementation task, the only existing edit was the parent's protocol bump from v2 to v3, used to stop the first formal run at its next frozen-code check. That edit is retained in this focused fix.
+
+The coordinator reported that the first two development cases completed eight formal calls before the run stopped. The first response revealed that the prompt projection had removed the matched paper's title and DOI; the RoBERTa abstract did not itself name RoBERTa, so the response declared an entity-mapping gap. The second case was already in flight. This is an **aborted initial formal round**, not a preplanned pilot. The implementer did not reopen those model answers, study reference labels or source materials; disclosure here uses the coordinator's observation. No validation outputs were inspected.
+
+Minimal implementation changes:
+
+- A local-only payload helper wraps the existing claim/evidence projection with `source_identity` containing exactly the pinned `local_review.source.title` and `.doi`. The generic historical paired-comparison projection is unchanged.
+- All four local prompt forms carry that same identity. Instructions say metadata identifies the paper and is not proof of a claim. No path, source status, confidence, rule hints or additional source text enters the payload.
+- Strict scoring reconstructs identity from the stored local context, verifies the complete source binding against the frozen original paper, and checks the resulting raw prompt. v2 plans remain rejected by the v3 protocol check.
+- The Chinese guide and design specification disclose the observed two development cases, the unchanged 90 claims/reference labels/source corpus, and the need to freeze all new plans after independent review. The coordinator owns new execution drivers and preservation of the old frozen round. All eight aborted calls and their token use remain study costs: the hard total is 360 calls, with at most 352 additional calls available. No old frozen driver or run was edited here.
+
+Validation used `D:/Internship/Academic code/audit_guardrail_20261118_terra_max_evaluation/venv/Scripts/python.exe`, with `PYTHONPATH` pointing to this checkout's `src`, and the same three focused pytest files. **63 passed in 174.23 seconds**, exit code 0. Evidence under the implementation directory:
+
+- `source_identity_red_tests.txt`: the new synthetic regression failed because the payload contained only claim/evidence and omitted source identity.
+- `source_identity_final_tests.txt`: final 63 passing checks, including equal identity in all four raw prompt forms, a paper name absent from abstract evidence, no hint/prior leakage, identity tampering, strict scorer replay and v2 rejection.
+
+`git diff --check` passed. This patch changes benchmark prompting/scoring, tests and documentation only; no core package, dependency, model configuration, claim or gold was changed. The implementation made zero actual model calls. Independent re-review and new v3 freezing remain with the coordinator.
