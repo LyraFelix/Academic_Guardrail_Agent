@@ -30,4 +30,6 @@ Report input, cached-input, uncached-input when fully known, output and reasonin
 
 ## Engineering boundaries
 
-Keep MCP core/domain behavior unchanged for this evaluation. Centralize the requested model in the optional evaluation adapter and render client_model from that same setting. Version the four-arm protocol. Preserve old runs/checkouts. Update frozen budgets, scoring integrity checks, tests, Chinese reproduction instructions and actual result documentation. No new package is expected.
+Keep retrieval and judgment rules unchanged for this evaluation. A pre-freeze material check found that the abstract parser truncated five of the fifteen PDFs at ordinary wrapped lines beginning with `results`, `methods`, or `introduction`. Fix this shared input bug before freezing: a complete heading line may end an abstract, a sentence continuation may not. Eight focused examples reproduced the truncation before the fix and pass afterward. All arms use the same corrected parser; this is not a result-driven intervention.
+
+Centralize the requested model in the optional evaluation adapter and render client_model from that same setting. Version the four-arm protocol. Preserve old runs/checkouts. Update frozen budgets, scoring integrity checks, tests, Chinese reproduction instructions and actual result documentation. No new package is expected.

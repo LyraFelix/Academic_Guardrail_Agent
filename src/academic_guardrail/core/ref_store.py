@@ -16,6 +16,12 @@ REFERENCE_SECTION = re.compile(r"(?im)^[ \t]*(?:#{1,6}\s*|\d+[.)]?\s+)?(?:refere
 NUMBERED_REFERENCE = re.compile(r"(?im)^[ \t]*\[\d+\][ \t]+[^\n]*(?:\.\s+|10\.\d{4,9}/|\[[JMDCRNPS]\])")
 ABSTRACT = re.compile(r"(?im)^[ \t]*(?:abstract|摘要)[ \t]*[:：]?[ \t]*\n?")
 SECTION = re.compile(r"(?im)^[ \t]*(?:\d+[.)]?\s+)?(?:introduction|methods|results|discussion|引言|方法|结果|讨论)\b")
+# PDF line wrapping can place an ordinary word such as "results" at line start.
+# Only a complete heading may end the abstract; sentence continuations may not.
+ABSTRACT_SECTION_END = re.compile(
+    r"(?im)^[ \t]*(?:\d+[.)]?[ \t]+)?"
+    r"(?:introduction|methods|results|discussion|引言|方法|结果|讨论)[ \t]*[:：]?[ \t]*$"
+)
 
 
 class LocalRefStore:
@@ -99,7 +105,7 @@ class LocalRefStore:
         if abstract_marker:
             tail = body[abstract_marker.end():]
             stop = re.search(r"\n\s*\n", tail)
-            next_section = SECTION.search(tail)
+            next_section = ABSTRACT_SECTION_END.search(tail)
             finish = min([len(tail), *([stop.start()] if stop else []),
                           *([next_section.start()] if next_section else [])])
             abstract = tail[:finish].strip()

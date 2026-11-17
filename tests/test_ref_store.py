@@ -6,6 +6,26 @@ import pytest
 from academic_guardrail.core.ref_store import LocalRefStore
 
 
+@pytest.mark.parametrize("continuation", [
+    "results on three downstream benchmarks.",
+    "methods that use only the training split.",
+    "introduction of image transformers.",
+    "discussion of their practical implications.",
+])
+@pytest.mark.parametrize("heading", ["1. Introduction", "INTRODUCTION"])
+def test_abstract_line_wrap_is_not_a_section_heading(tmp_path, continuation, heading):
+    """PDF line wrapping must not turn a sentence fragment into a heading."""
+    abstract = "We report new\n" + continuation + "\nThese findings motivate further study."
+    text = "A test paper\n\nAbstract\n" + abstract + "\n" + heading + "\nBody text."
+    path = tmp_path / "paper.txt"
+    path.write_text(text, encoding="utf-8")
+
+    record = LocalRefStore(str(tmp_path)).records[0]
+
+    assert record.abstract == abstract
+    assert text[record.abstract_location.char_start:record.abstract_location.char_end] == abstract
+
+
 def test_local_ref_store_arbitrary_filename_matching():
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a PDF/TXT file with completely unrelated filename
