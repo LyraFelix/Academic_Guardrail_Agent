@@ -1,9 +1,6 @@
 """Unit tests for MCP Server tool handlers and exception middleware."""
 
-import pytest
 import asyncio
-
-mcp_mod = pytest.importorskip("mcp.server.fastmcp")
 
 from academic_guardrail.mcp_server import handle_mcp_exceptions
 from academic_guardrail.core.exceptions import ProviderError, RateLimitError, ParserError

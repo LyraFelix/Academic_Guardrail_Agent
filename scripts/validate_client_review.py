@@ -36,20 +36,21 @@ async def validate(destination: Path):
                         "generate_audit_html_report", "prepare_claim_review", "read_claim_evidence", "record_claim_review",
                         "prepare_local_claim_review", "follow_up_local_claim", "generate_claim_review_report"}
             assert names == expected
-            save(destination / "tools.json", listing.model_dump(mode="json"))
+            save(destination / "tools.json", listing.model_dump(mode="json", by_alias=True))
             prompts = await session.list_prompts()
             assert "review_claim_workflow" in {prompt.name for prompt in prompts.prompts}
             prompt = await session.get_prompt("review_claim_workflow", {"claim": "Treatment reduces mortality by 90%."})
-            save(destination / "prompt.json", prompt.model_dump(mode="json"))
+            save(destination / "prompt.json", prompt.model_dump(mode="json", by_alias=True))
 
             async def call(name, arguments, *, should_fail=False):
                 result = await session.call_tool(name, arguments)
-                transcript.append({"tool": name, "arguments": arguments, "result": result.model_dump(mode="json")})
+                transcript.append({"tool": name, "arguments": arguments,
+                                   "result": result.model_dump(mode="json", by_alias=True)})
                 save(destination / "transcript.json", transcript)
-                assert bool(result.isError) == should_fail, transcript[-1]
+                assert bool(result.is_error) == should_fail, transcript[-1]
                 if should_fail:
                     return None
-                return result.structuredContent or json.loads(next(block.text for block in result.content if hasattr(block, "text")))
+                return result.structured_content or json.loads(next(block.text for block in result.content if hasattr(block, "text")))
 
             source = "Treatment reduces mortality by 10%. " + " ".join(f"Background statement {i}." for i in range(26))
             prepared = await call("prepare_claim_review", {"claim": "Treatment reduces mortality by 90%.",

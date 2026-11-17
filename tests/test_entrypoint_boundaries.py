@@ -30,7 +30,6 @@ def test_cli_offline_unknown_doi_is_explicit():
 
 @pytest.mark.asyncio
 async def test_mcp_uses_shared_ambiguity_decision():
-    pytest.importorskip("mcp.server.fastmcp")
     from academic_guardrail import mcp_server
 
     with patch("academic_guardrail.core.service.AuditService._collect_evidence", AsyncMock(return_value=AMBIGUOUS)):
@@ -42,7 +41,6 @@ async def test_mcp_uses_shared_ambiguity_decision():
 
 @pytest.mark.asyncio
 async def test_mcp_offline_retraction_does_not_assert_normal():
-    pytest.importorskip("mcp.server.fastmcp")
     from academic_guardrail import mcp_server
 
     with patch("academic_guardrail.core.service.ChineseAcademicProvider", side_effect=AssertionError("HTTP initialized")):

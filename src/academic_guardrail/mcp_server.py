@@ -2,13 +2,15 @@
 
 import functools
 from typing import Literal
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
+from academic_guardrail import __version__
 from academic_guardrail.core.review_models import ClientJudgment
 from academic_guardrail.core.exceptions import (
     AcademicGuardrailError, ParserError, ProviderError, RateLimitError
 )
 
-mcp = FastMCP("Academic Guardrail Agent")
+mcp = MCPServer("Academic Guardrail Agent", version=__version__)
 
 def _get_service(offline: bool = False):
     """Create one service per invocation; callers close it in a finally block."""
@@ -36,6 +38,22 @@ def handle_mcp_exceptions(func):
             return f"❌ [MCP FILE_NOT_FOUND] 未找到指定文件: {e}"
         except Exception as e:
             return f"❌ [MCP UNHANDLED_ERROR] 发生未知服务异常: {str(e)}"
+    return wrapper
+
+
+def expose_review_errors(func):
+    """Keep expected review rejections actionable under the SDK v2 error policy.
+
+    Core functions still use ordinary Python exceptions. Only this MCP boundary
+    translates validation/file conflicts into client-visible tool errors; other
+    failures keep the SDK's generic response and server-side traceback.
+    """
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except (ValueError, FileNotFoundError, FileExistsError) as exc:
+            raise ToolError(str(exc)) from exc
     return wrapper
 
 
@@ -112,6 +130,7 @@ async def generate_audit_html_report(file_path: str, output_path: str = "", refs
 
 
 @mcp.tool()
+@expose_review_errors
 async def prepare_claim_review(claim: str, reference_text: str = "", citation_str_or_doi: str = "",
                                refs_dir: str = "", offline: bool = True) -> dict:
     """为客户端模型准备正文断言的证据包。reference_text 与 citation_str_or_doi 必须二选一。
@@ -143,6 +162,7 @@ async def prepare_claim_review(claim: str, reference_text: str = "", citation_st
 
 
 @mcp.tool()
+@expose_review_errors
 async def read_claim_evidence(packet_id: str, offset: int = 0, limit: int = 24) -> dict:
     """继续读取已保存证据包的完整原文句子。按 next_offset 翻页，不重新联网检索。"""
     from academic_guardrail.core.claim_review import evidence_page
@@ -153,6 +173,7 @@ async def read_claim_evidence(packet_id: str, offset: int = 0, limit: int = 24) 
 
 
 @mcp.tool()
+@expose_review_errors
 async def record_claim_review(packet_id: str, judgment: ClientJudgment, expected_packet_sha256: str) -> dict:
     """校验证据编号、完整阅读声明和逐字引用，保存客户端模型的结构化语义判断。
 
@@ -174,6 +195,7 @@ def _local_packet_response(packet) -> dict:
 
 
 @mcp.tool()
+@expose_review_errors
 async def prepare_local_claim_review(claim: str, citation_str_or_doi: str, refs_dir: str,
                                      initial_scope: Literal["abstract", "full_text"] = "abstract") -> dict:
     """从同一篇身份匹配的本地文献准备摘要证据，保存文件指纹；全程离线。
@@ -186,6 +208,7 @@ async def prepare_local_claim_review(claim: str, citation_str_or_doi: str, refs_
 
 
 @mcp.tool()
+@expose_review_errors
 async def follow_up_local_claim(review_id: str, expected_review_sha256: str, gap_index: int = 0) -> dict:
     """按已保存的证据缺口在同一篇本地文献中补查一次，返回新证据包。
 
@@ -197,6 +220,7 @@ async def follow_up_local_claim(review_id: str, expected_review_sha256: str, gap
 
 
 @mcp.tool()
+@expose_review_errors
 async def generate_claim_review_report(review_ids: list[str], output_path: str) -> dict:
     """把指定判断及其补查前记录导出自包含 HTML，显示原文位置和结论变化。
 
@@ -233,7 +257,7 @@ def review_claim_workflow(claim: str, citation: str = "", refs_dir: str = "", ou
 
 
 def main():
-    mcp.run()
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

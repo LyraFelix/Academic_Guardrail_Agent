@@ -118,7 +118,7 @@ async def validate(destination: Path):
                 result = await session.call_tool(name, arguments)
                 text = "\n".join(block.text for block in result.content if hasattr(block, "text"))
                 transcripts[name] = text
-                assert not result.isError and all(item in text for item in expected), text
+                assert not result.is_error and all(item in text for item in expected), text
     save_json(destination / "mcp_transcript.json", transcripts)
     assert json.loads(boundary_path.read_text(encoding="utf-8")) == []
     for path in destination.glob("*.html"):

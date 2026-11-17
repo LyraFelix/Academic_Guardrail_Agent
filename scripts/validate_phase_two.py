@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GUARDS = (
     "academic_guardrail.core.service.ChineseAcademicProvider",
     "httpx.AsyncClient.send",
+    "httpx2.AsyncClient.send",
+    "httpx2.Client.send",
     "academic_guardrail.core.semantic_matcher.SemanticMatcher._get_model",
 )
 
@@ -110,7 +112,7 @@ async def validate(destination: Path):
             for name, arguments, expected in calls:
                 result = await session.call_tool(name, arguments)
                 text = "\n".join(block.text for block in result.content if hasattr(block, "text"))
-                assert not result.isError and expected in text, text
+                assert not result.is_error and expected in text, text
                 transcripts[name] = text
     assert guard_path.is_file(), "MCP child did not finish and save boundary counters"
     assert json.loads(guard_path.read_text(encoding="utf-8")) == []

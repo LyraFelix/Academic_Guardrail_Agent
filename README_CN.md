@@ -8,15 +8,17 @@
 
 ## 安装与运行
 
-要求 Python 3.10 或以上。建议在独立环境中从本仓库安装：
+要求 Python 3.10 或以上，使用官方 MCP Python SDK 2.3+（低于 3）。建议在独立环境中从本仓库安装：
 
 ```powershell
-python -m pip install -e ".[dev]"
+python -m pip install --upgrade -e ".[dev]"
 academic-guardrail verify "10.1038/nature12968" --offline
 academic-guardrail audit docs/examples/sample_manuscript.md --offline -o report.html
 ```
 
 项目的发行包名是 `mcp-academic-guardrail`，CLI 命令名是 `academic-guardrail`。上面的源码安装不依赖同名 PyPI 项目是否已发布。
+
+SDK 2.x 的接口变化、真实 stdio 检查和干净环境复现见 [MCP SDK 迁移与 CI 指南](docs/mcp_sdk_migration_guide.md)。
 
 ## 在线与离线
 

@@ -18,6 +18,8 @@ This project provides citation metadata lookup, source-backed retraction alerts,
 
 ## Development
 
+The communication layer targets official `mcp>=2.3.0,<3`: `MCPServer`, snake_case SDK attributes, and `by_alias=True` for persisted protocol messages. Business packet serialization stays unchanged. Expected review validation/file errors become `ToolError` only at the MCP boundary. CI installs a built wheel with current dependencies, tests legacy initialization and modern discovery through real stdio, and runs all four offline acceptance scripts on Linux/Windows. Mandatory MCP imports must not be skipped. See `docs/mcp_sdk_migration_guide.md` for the migration and reproduction path.
+
 Read `docs/learning_guide.md`, `docs/phase_two_guide.md` and `docs/plans/phase_two.md`. Preserve simple module responsibilities and explicit failure states. Unit tests block external HTTP, isolate caches and disable model downloads. Do not represent unit tests, synthetic fixtures or historical prediction files as current live-provider or LLM benchmark results.
 
 Phase two separates bibliography entries from occurrences, reuses reference decisions, preserves parsing diagnostics and retrieves local body passages with exact file/page/character positions. Known DOI targets require corresponding local DOI identity. Uncited entries are metadata-only. Retrieval status remains separate from identity/retraction status; failed upstream queries are retained alongside successful local fallbacks.

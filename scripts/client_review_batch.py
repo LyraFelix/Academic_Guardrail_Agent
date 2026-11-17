@@ -65,11 +65,11 @@ async def server(batch, output):
 async def call(session, name, arguments, transcript):
     result = await session.call_tool(name, arguments)
     transcript.write(json.dumps({"tool": name, "arguments": arguments,
-                                 "response": result.model_dump(mode="json")}, ensure_ascii=False) + "\n")
+                                 "response": result.model_dump(mode="json", by_alias=True)}, ensure_ascii=False) + "\n")
     transcript.flush()
-    if result.isError:
+    if result.is_error:
         raise ValueError("; ".join(block.text for block in result.content if hasattr(block, "text")))
-    return result.structuredContent or json.loads(next(block.text for block in result.content if hasattr(block, "text")))
+    return result.structured_content or json.loads(next(block.text for block in result.content if hasattr(block, "text")))
 
 
 async def prepare(inputs_path, destination, dataset_manifest=None):

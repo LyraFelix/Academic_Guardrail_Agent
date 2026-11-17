@@ -218,7 +218,8 @@ async def test_mcp_client_workflow_uses_stored_packet(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_mcp_rejects_ambiguous_input_sources():
     from academic_guardrail.mcp_server import prepare_claim_review
-    with pytest.raises(ValueError):
+    from mcp.server.mcpserver.exceptions import ToolError
+    with pytest.raises(ToolError, match="Provide exactly one"):
         await prepare_claim_review("Claim", reference_text="Text", citation_str_or_doi="A paper")
 
 

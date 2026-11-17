@@ -6,15 +6,17 @@ A Python CLI and MCP server for reviewing academic citations. It retrieves refer
 
 ## Install from source
 
-Python 3.10+ is required. In a dedicated environment, from this repository:
+Python 3.10+ and the official MCP Python SDK 2.3+ (below 3) are required. In a dedicated environment, from this repository:
 
 ```bash
-python -m pip install -e ".[dev]"
+python -m pip install --upgrade -e ".[dev]"
 academic-guardrail verify "10.1038/nature12968" --offline
 academic-guardrail audit docs/examples/sample_manuscript.md --offline -o report.html
 ```
 
 The distribution name is `mcp-academic-guardrail`; the executable is `academic-guardrail`. Source installation does not assume a public PyPI release.
+
+See the [SDK migration and CI guide](docs/mcp_sdk_migration_guide.md) for SDK 2.x changes, real stdio checks and clean-environment reproduction.
 
 ## Online and offline operation
 

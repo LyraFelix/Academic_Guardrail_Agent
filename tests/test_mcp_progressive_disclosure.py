@@ -1,7 +1,5 @@
 import pytest
 
-pytest.importorskip("mcp.server.fastmcp")
-
 from unittest.mock import AsyncMock, patch
 from academic_guardrail.mcp_server import verify_single_citation, audit_document_claims
 

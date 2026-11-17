@@ -58,7 +58,7 @@ async def validate(output):
                 "claim": "The treatment reduced mortality by 25% at six months.",
                 "citation": "Synthetic Local Follow-up Study", "refs_dir": str(refs),
                 "output_path": str(output / "review.html")})
-            prompt_data = prompt.model_dump(mode="json")
+            prompt_data = prompt.model_dump(mode="json", by_alias=True)
             (output / "workflow_prompt.json").write_text(json.dumps(prompt_data, ensure_ascii=False, indent=2), encoding="utf-8")
             assert all(name in json.dumps(prompt_data) for name in (
                 "prepare_local_claim_review", "follow_up_local_claim", "generate_claim_review_report"))
