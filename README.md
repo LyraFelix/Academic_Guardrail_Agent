@@ -2,7 +2,27 @@
 
 English | [中文](README_CN.md)
 
-A Python CLI and MCP server for reviewing academic citations. It retrieves reference metadata, preserves retraction evidence and gives an existing client model source-linked evidence for claim review. The client judges meaning; the server checks exact quotes and saves the judgment with its evidence snapshot. Local rules remain review hints rather than a scientific truth judge.
+Give your MCP client a Word or Markdown draft with numbered citations and a folder of reference papers. Academic Guardrail ties each citation to its paper, checks the client's quotes against the source text and puts the judgments, source locations and unresolved citations in one HTML report. A Python CLI also provides metadata, retraction and rule-based checks.
+
+## Check a citation against the paper
+
+Our example draft says SimCLR used a default batch size of **256** for **100 epochs**. Page 3 gives **4096** for the batch size and confirms the training duration. The same paper is cited correctly elsewhere in the draft. The report keeps both occurrences so the author can fix the wrong number. This is an authored example based on a real paper. [SimCLR, page 3](https://arxiv.org/pdf/2002.05709v3#page=3) · [Example manuscript](docs/examples/manuscript_review.md)
+
+The draft separately cites a paper with a confirmed retraction. Its row shows the retraction even without a local PDF. The bundled offline database has three historical examples. [Publisher's retraction notice](https://doi.org/10.1038/nature13598)
+
+![Scripted example report showing the draft's 256, the PDF's 4096 and both quotes on page 3](docs/examples/manuscript_example.png)
+
+After installing from source, run the offline example below. It replays explicit example judgments through the MCP interface and writes the reports locally. For your own draft, use the `review_manuscript_workflow` prompt in your MCP client. [Using the manuscript workflow](docs/manuscript_review_guide.md)
+
+```bash
+python -m scripts.validate_manuscript_review --output scratch/manuscript_demo
+```
+
+Open `scratch/manuscript_demo/md/report.html` or `scratch/manuscript_demo/docx/report.html`. To review your own draft, give the client the paths to the draft, your references folder and a new HTML file. For example:
+
+> Review every numbered citation in draft.docx against the papers in references/. Use the full text. Save each judgment with the exact quote and its location. Include missing sources and retractions. Export everything to draft_review.html.
+
+The [90-case offline retrieval regression](docs/manuscript_retrieval_results.md) reports recovered evidence, previously available evidence that dropped out and the amount of text returned.
 
 ## Install from source
 
@@ -54,7 +74,7 @@ Identity is resolved before retraction facts are assigned to a citation. An ambi
 
 ## MCP
 
-This project runs **one MCP server**, exposing ten tools and one workflow prompt. The tools are operations on that server, not separate MCP servers.
+One MCP server exposes twelve tools and two workflow prompts.
 
 | Tool | Purpose |
 | --- | --- |
@@ -68,6 +88,8 @@ This project runs **one MCP server**, exposing ten tools and one workflow prompt
 | `prepare_local_claim_review` | Match one local paper and freeze its real abstract or full text |
 | `follow_up_local_claim` | Search that same paper once for a gap recorded by the client; preserve earlier evidence |
 | `generate_claim_review_report` | Export selected saved judgments and their before/after evidence to HTML |
+| `prepare_manuscript_review` | Bind each occurrence in a Markdown or Word draft to its local source and evidence packet |
+| `generate_manuscript_review_report` | Combine the draft, saved judgments, exact quotes and unresolved occurrences in one HTML report |
 
 Configure an MCP client to launch the installed executable:
 
@@ -75,13 +97,13 @@ Configure an MCP client to launch the installed executable:
 {"mcpServers": {"academic-guardrail": {"command": "academic-guardrail-mcp"}}}
 ```
 
-The four original tools and `prepare_claim_review` accept `offline: true`. Reading and recording packets are always local. Citation verification and document audit support `detail: compact | detailed | debug`. The client's model/network configuration remains outside this server's control; server offline mode does not make a cloud model local.
+The manuscript workflow defaults to offline source retrieval. The client's model runs wherever you configured it. The CLI and the standard document audit provide rule-based checks. In an MCP client, `audit_document_claims` with `client_review: true` starts the manuscript review queue. Set `offline: true` on this entry point for local sources only.
 
 Use the `review_claim_workflow` prompt or ask the client to prepare evidence, read every page, compare subject/relation/numbers/scope/counterevidence, and record its conclusion. Pass the returned `packet_sha256` as `expected_packet_sha256` when recording. A local `REVIEW_REQUIRED` result is a hint for the client to continue, not a final handoff to the user. See the [client workflow and code guide](docs/client_review_guide.md).
 
-For a local paper, the client can now record a specific missing fact, request one bounded literal search of the same source, and judge the extended evidence again. The HTML report preserves both judgments and shows the query, quotes, source locations and file status. Changed sources block new judgments; unresolved gaps remain visible. These three new tools are local and make no model API calls. See the [local follow-up guide](docs/local_followup_guide.md) for a runnable example and code reading order.
+For a local paper the client can record a missing fact, search that paper once, then reconsider the claim with both sets of evidence. The HTML shows the query, quotes, locations and file status. See the [local follow-up guide](docs/local_followup_guide.md).
 
-Client conclusions are `SUPPORTED`, `CONTRADICTED`, `NOT_ENOUGH_EVIDENCE` or `UNCERTAIN`. `EVIDENCE_LINKS_VALID` only certifies mechanical quote/ID consistency; `semantic_judgment_verified` remains false. The existing CLI/HTML report contains local-rule results; client judgments are separate JSON records and the host client's response.
+Client conclusions are `SUPPORTED`, `CONTRADICTED`, `NOT_ENOUGH_EVIDENCE` or `UNCERTAIN`. `EVIDENCE_LINKS_VALID` describes the quote and ID checks. In manuscript mode the report shows each saved conclusion alongside the source text and the original draft location.
 
 ## Read and test
 

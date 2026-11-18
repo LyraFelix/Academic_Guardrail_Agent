@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "archive_manifest_sha256": "2d697d9d412c11eb9ad972905957b3b8199cacfb0d7115fd70ecdefd81eda758",
+  "modes": ["original", "normalized", "ranked", "structural"],
+  "max_hits": 3,
+  "character_cap": 18000,
+  "primary_loss_groups": {
+    "development_albert_03": [["decision"]],
+    "development_electra_05": [["decision"], ["fulltext_single:e74"]],
+    "development_bart_04": [["decision"]],
+    "validation_a_swin_05": [["decision"], ["fulltext_direct:e258", "fulltext_direct:e261"]],
+    "validation_a_simclr_03": [["decision", "fulltext_single:e105", "fulltext_single:e106"]],
+    "validation_a_simclr_04": [["decision", "fulltext_single:e105", "fulltext_single:e106"]],
+    "validation_b_convnext_03": [["decision", "fulltext_single:e242"]],
+    "validation_b_convnext_05": [["decision", "fulltext_single:e242"]]
+  },
+  "old_alternative_groups": {
+    "development_roberta_04": [["local:e19"], ["local:e59", "local:e60"]],
+    "development_electra_03": [["local:e28", "local:e11"]],
+    "development_vit_04": [["local:e15", "local:e30"]],
+    "validation_a_mae_04": [["local:e39", "local:e42"]],
+    "validation_a_mae_05": [["local:e66"]],
+    "validation_b_convnext_04": [["local:e19", "local:e20", "local:e49", "local:e50", "local:e52", "local:e53"]]
+  }
+}

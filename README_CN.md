@@ -2,9 +2,27 @@
 
 [English](README.md) | 中文
 
-一个用于检查论文引用的 Python 项目，提供命令行和 MCP 接口。它查询文献元数据、保留撤稿来源，并给已有的大模型客户端提供带来源的证据包。客户端完成语义判断，服务端核对引用并保存判断与证据快照；本地规则负责提供可解释的检查线索。
+把使用编号引用的 Word 或 Markdown 初稿和参考文献目录交给已有的 MCP 客户端。Academic Guardrail 将稿件里每一处引用对应到文献，逐字核对客户端给出的引文，并把判断、原文位置和未解决的引用汇入同一份 HTML 报告。Python 命令行也可用于核验文献元数据、查询撤稿和运行规则检查。
 
-本项目目前是学习与工程实践项目。文本相似度不是事实证明，文献存在也不表示正文说法成立。
+## 一个引用写错了，怎样找到原文？
+
+示例初稿写道，SimCLR 默认用 **256** 的批量训练 **100 轮**。论文第 3 页给出的默认批量是 **4096**，训练轮数确实是 100。稿子另一处正确引用了同一篇论文，报告分别保留这两处判断，作者可以直接回到写错数字的那一句。这是依据真实论文编写的错引示例。[论文第 3 页](https://arxiv.org/pdf/2002.05709v3#page=3) · [示例初稿](docs/examples/manuscript_review.md)
+
+稿中还单独引用了一篇已确认撤稿的文献。即使本地没有它的 PDF，该行仍显示撤稿状态。离线内置库收录三个历史示例。[出版方撤稿通知](https://doi.org/10.1038/nature13598)
+
+![示例报告中的错引，初稿写 256，论文第 3 页的默认设置写 4096，卡片保留逐字引文和坐标](docs/examples/manuscript_example.png)
+
+按下文从源码安装后，用下面的命令回放示例判断并生成整稿报告。审自己的稿件时，在 MCP 客户端使用 `review_manuscript_workflow` 工作流。[整稿使用与代码导读](docs/manuscript_review_guide.md)
+
+```powershell
+python -m scripts.validate_manuscript_review --output scratch/manuscript_demo
+```
+
+打开 `scratch/manuscript_demo/md/report.html` 或 `scratch/manuscript_demo/docx/report.html`。换成自己的稿件时，把初稿、参考文献目录和一个新的 HTML 输出路径告诉客户端，例如：
+
+> 用 Academic Guardrail 审查 draft.docx 里每一处编号引用，逐篇读取 references 里的论文全文。把每处判断、逐字引文和原文位置放在一起，保留缺原文和已撤稿的条目，导出到 draft_review.html。
+
+[90 条样本离线回归](docs/manuscript_retrieval_results.md) 列出了哪些证据被找回、哪些旧证据丢失，以及每种方法需要返回多少原文。
 
 ## 安装与运行
 
@@ -63,7 +81,7 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 
 ## MCP 使用
 
-本项目实现的是 **一个 MCP Server**，向客户端注册十个工具和一个工作流提示。工具是同一个服务提供的不同操作，不是十个 MCP。
+项目提供**一个 MCP 服务**，包含十二个工具和两个工作流提示。
 
 | 工具 | 用途 |
 | --- | --- |
@@ -77,6 +95,8 @@ academic-guardrail verify "Attention Is All You Need" --detail detailed
 | `prepare_local_claim_review` | 匹配一份本地论文，保存真实摘要或全文证据 |
 | `follow_up_local_claim` | 根据已记录的缺口，在同一篇论文中定向补查一次，保留原证据 |
 | `generate_claim_review_report` | 将选定判断及补查前后的证据导出为 HTML |
+| `prepare_manuscript_review` | 为 Markdown 或 Word 初稿中每处引用绑定本地文献和证据包 |
+| `generate_manuscript_review_report` | 在同一份 HTML 中展示初稿、客户端判断、逐字引文和未解决的引用 |
 
 MCP 客户端可以启动源码安装后生成的命令：
 
@@ -90,13 +110,13 @@ MCP 客户端可以启动源码安装后生成的命令：
 }
 ```
 
-原有四个工具及 `prepare_claim_review` 支持 `offline: true`；读取和记录证据包始终只访问本地。文献核验和审计支持 `detail` 为 `compact`、`detailed`、`debug`。服务端离线不意味着客户端云模型离线，客户端模型与其他在线工具由宿主配置控制。
+整稿工作流默认离线取证，客户端使用你配置的模型。CLI 和普通文档审计提供规则检查。在 MCP 客户端把 `audit_document_claims` 的 `client_review` 设为 `true` 就能开始整稿语义审查，同时设置 `offline: true` 可限定服务端只用本地来源。
 
 使用 `review_claim_workflow` 提示，或让客户端依次完成“准备证据 → 读取全部分页 → 检查主体、关系、数字、范围和反证 → 记录结论”。记录时将准备结果的 `packet_sha256` 传为 `expected_packet_sha256`。规则返回复核或证据不足时，客户端应继续分析可用原文。完整示例和源码阅读顺序见[客户端判断导读](docs/client_review_guide.md)。
 
 对于本地论文，现在可以继续完成“说明具体缺口 → 在同一原文件中补查一次 → 结合新旧证据再判断 → 展示前后结果”。报告保留原判断、检索词、逐字引文、位置和文件状态；来源变化会阻止保存新判断，仍未解决的缺口会明确显示。三个新工具只处理本地文件，不调用模型 API。可运行示例和阅读顺序见[本地补查导读](docs/local_followup_guide.md)。
 
-客户端给出 `SUPPORTED`、`CONTRADICTED`、`NOT_ENOUGH_EVIDENCE` 或 `UNCERTAIN`。服务端的 `EVIDENCE_LINKS_VALID` 仅说明引用与证据一致，`semantic_judgment_verified` 始终为 false。原 CLI/HTML 报告仍展示规则结果；客户端语义判断保存在单独 JSON 记录中，并由客户端向用户汇报。
+客户端给出 `SUPPORTED`、`CONTRADICTED`、`NOT_ENOUGH_EVIDENCE` 或 `UNCERTAIN`。`EVIDENCE_LINKS_VALID` 表示引文和编号通过了校验。整稿报告将保存的语义判断、原文引文和稿件位置放在同一条引用下。
 
 ## 学习与验证
 
