@@ -1,4 +1,4 @@
-"""Bound a local follow-up to one original paper and literal, contextual hits.
+"""Bound a local follow-up to contextual hits in one pinned paper.
 
 Identity selection belongs to LocalRefStore and the review service. This module
 never resolves a new paper: it only reopens the absolute path in its snapshot.
@@ -6,32 +6,39 @@ never resolves a new paper: it only reopens the absolute path in its snapshot.
 
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from academic_guardrail.core.followup_models import LocalSearchResult, LocalSource
-from academic_guardrail.core.models import PaperRecord
+from academic_guardrail.core.models import EvidencePassage, PaperRecord
+from academic_guardrail.core.passage_ranking import rank_passages
 from academic_guardrail.core.ref_store import LocalRefStore
+from academic_guardrail.core.search_view import whole_term_pattern
 
 
 SourceStatus = Literal["CURRENT", "CHANGED", "MISSING", "UNREADABLE"]
 MAX_NEW_CHARACTERS = 18000
-# Han ideographs do not need spaces between words. Keep other Unicode letters,
-# digits and underscores as token characters, including accented Latin letters.
-_HAN_RANGES = (r"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
-               r"\U00020000-\U0002fa1f\U00030000-\U000323af")
-_HAN_CHARACTER = re.compile(f"[{_HAN_RANGES}]")
-_NON_HAN_WORD_CHARACTER = rf"[^\W{_HAN_RANGES}]"
+RetrievalMode = Literal["original", "normalized", "ranked", "structural"]
+
+
+@dataclass(frozen=True)
+class PassageSelection:
+    """Indices refer to the caller's original passages; ranks are best first."""
+    ranked_indices: tuple[int, ...]
+    hit_indices: tuple[int, ...]
+    context_indices: tuple[int, ...]
+    character_count: int
 
 
 def _text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _source_bytes_and_status(source: LocalSource) -> tuple[bytes | None, SourceStatus]:
-    """Read once; the caller can parse the very bytes whose hash was checked."""
+def snapshot_bytes(path_string: str, sha256: str) -> tuple[bytes | None, SourceStatus]:
+    """Read a pinned manuscript or paper only at its original canonical path."""
     try:
-        path = Path(source.path)
+        path = Path(path_string)
         if not path.is_absolute():
             return None, "UNREADABLE"
         resolved = path.resolve(strict=True)
@@ -45,18 +52,18 @@ def _source_bytes_and_status(source: LocalSource) -> tuple[bytes | None, SourceS
         return None, "MISSING"
     except (OSError, RuntimeError, ValueError):
         return None, "UNREADABLE"
-    if hashlib.sha256(raw_bytes).hexdigest() != source.sha256:
+    if hashlib.sha256(raw_bytes).hexdigest() != sha256:
         return None, "CHANGED"
     return raw_bytes, "CURRENT"
 
 
 def source_status(source: LocalSource) -> SourceStatus:
     """Report current raw-file status without changing the saved source."""
-    return _source_bytes_and_status(source)[1]
+    return snapshot_bytes(source.path, source.sha256)[1]
 
 
 def _current_source_bytes(source: LocalSource) -> bytes:
-    raw_bytes, status = _source_bytes_and_status(source)
+    raw_bytes, status = snapshot_bytes(source.path, source.sha256)
     if status != "CURRENT" or raw_bytes is None:
         raise ValueError(f"Local source is {status}; the pinned paper cannot be used.")
     return raw_bytes
@@ -109,33 +116,60 @@ def _query_patterns(search_terms: list[str]) -> tuple[list[str], list[re.Pattern
         if normalized in seen:
             raise ValueError("Search terms must be distinct after trimming and ignoring case.")
         seen.add(normalized)
-        # Escape every supplied character: no regex operators, aliases or stemming.
-        left = "" if _HAN_CHARACTER.fullmatch(term[0]) else rf"(?<!{_NON_HAN_WORD_CHARACTER})"
-        right = "" if _HAN_CHARACTER.fullmatch(term[-1]) else rf"(?!{_NON_HAN_WORD_CHARACTER})"
-        pattern = left + re.escape(term) + right
-        if term[0].isdigit():
-            pattern = r"(?<!\d[.,])" + pattern
-        if term[-1].isdigit():
-            pattern += r"(?![.,]\d)"
         terms.append(term)
-        patterns.append(re.compile(pattern, re.IGNORECASE))
+        patterns.append(whole_term_pattern(term))
     return terms, patterns
 
 
-def search_local_evidence(source: LocalSource, search_terms: list[str],
-                          *, max_hits: int = 3) -> LocalSearchResult:
-    """Return up to three lexical hits with their immediate passage neighbors.
+def select_local_passages(passages: list[EvidencePassage], search_terms: list[str], *,
+                          mode: RetrievalMode = "structural", max_hits: int = 3) -> PassageSelection:
+    """Select from one already-parsed paper without reading files or calling a model.
 
-    Ranking uses the number of distinct literal terms matched, then occurrence
-    count, then original document order. The selected whole passages are emitted
-    in document order; overlapping context is included once. ``matched_passages``
-    counts selected hit passages, while ``total_passages`` counts all searched
-    passages. The existing parser excludes bibliography and preserves the actual
-    abstract as part of the searchable article text.
+    Original reproduces the literal ranking. Normalized changes spelling only.
+    Ranked adds inverse passage frequency, bounded proximity and deduplication.
+    Structural also links a matching heading/caption with scoped body/table text.
+    All modes reserve whole hits and their immediate neighbors first. Structural
+    then fits complete linked groups, highest-ranked hit first. Characters count
+    unique raw passages in this lookup, before parent-packet evidence deduplication.
     """
     terms, patterns = _query_patterns(search_terms)
     if type(max_hits) is not int or not 1 <= max_hits <= 3:
         raise ValueError("max_hits must be an integer between one and three.")
+    if mode not in {"original", "normalized", "ranked", "structural"}:
+        raise ValueError(f"Unknown local retrieval mode: {mode}")
+    if len({p.location.file_path for p in passages if p.location}) > 1:
+        raise ValueError("A local lookup requires passages from one source file.")
+
+    links = {}
+    if mode == "original":
+        ranked = []
+        for index, passage in enumerate(passages):
+            counts = [len(pattern.findall(passage.text)) for pattern in patterns]
+            coverage = sum(count > 0 for count in counts)
+            if coverage:
+                ranked.append((-coverage, -sum(counts), index))
+        order = [index for _, _, index in sorted(ranked)]
+    else:
+        order, links = rank_passages(passages, terms, mode, max_hits)
+    hits = order[:max_hits]
+    context = {j for i in hits for j in range(max(0, i - 1), min(len(passages), i + 2))}
+    characters = sum(len(passages[i].text) for i in context)
+    # At the current 1200-character parser limit the three base neighborhoods
+    # together consume at most 10800 characters. Never truncate them silently.
+    if characters > MAX_NEW_CHARACTERS:
+        raise ValueError("Complete hit context exceeds the local lookup character budget.")
+    for i in hits:
+        additions = set(links.get(i, ())) - context
+        cost = sum(len(passages[j].text) for j in additions)
+        if characters + cost <= MAX_NEW_CHARACTERS:
+            context.update(additions)
+            characters += cost
+    return PassageSelection(tuple(order), tuple(hits), tuple(sorted(context)), characters)
+
+
+def search_local_evidence(source: LocalSource, search_terms: list[str],
+                          *, max_hits: int = 3) -> LocalSearchResult:
+    """Search the pinned article and return original passages in document order."""
     raw_bytes = _current_source_bytes(source)
     record = LocalRefStore().extract_paper_record(source.path, source_bytes=raw_bytes)
     if record is None:
@@ -145,22 +179,8 @@ def search_local_evidence(source: LocalSource, search_terms: list[str],
     if (record.title, record.doi) != (source.title, source.doi):
         raise ValueError("Extracted paper identity differs from the pinned source.")
 
-    ranked = []
-    for index, passage in enumerate(record.passages):
-        counts = [len(pattern.findall(passage.text)) for pattern in patterns]
-        coverage = sum(count > 0 for count in counts)
-        if coverage:
-            ranked.append((-coverage, -sum(counts), index))
-    ranked.sort()
-    selected_hits = [index for _, _, index in ranked[:max_hits]]
-    selected_indices = set()
-    for index in selected_hits:
-        selected_indices.update(range(max(0, index - 1), min(len(record.passages), index + 2)))
-    passages = [record.passages[index] for index in sorted(selected_indices)]
-    # Current chunks are <= 1200 characters, so three hits with neighbors fit.
-    # Fail explicitly if that parser contract changes; never cut off context.
-    if sum(len(passage.text) for passage in passages) > MAX_NEW_CHARACTERS:
-        raise ValueError("Complete hit context exceeds the local lookup character budget.")
-    return LocalSearchResult(query_terms=terms, passages=passages,
-                             matched_passages=len(selected_hits),
+    selection = select_local_passages(record.passages, search_terms, max_hits=max_hits)
+    return LocalSearchResult(query_terms=[term.strip() for term in search_terms],
+                             passages=[record.passages[i] for i in selection.context_indices],
+                             matched_passages=len(selection.hit_indices),
                              total_passages=len(record.passages))
