@@ -1,0 +1,11 @@
+A Simple Framework for Contrastive Learning of Visual Representations
+Ting Chen, Simon Kornblith, Mohammad Norouzi, Geoffrey Hinton
+2020
+DOI: 10.48550/arXiv.2002.05709
+Excerpt from arXiv:2002.05709v3, PDF page 3, Default setting.
+
+Default setting.
+
+[…]
+
+We train at batch size 4096 for 100 epochs.

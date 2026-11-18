@@ -5,6 +5,8 @@ import html
 import json
 from pathlib import Path
 
+from academic_guardrail.core.atomic_file import atomic_text_file
+from academic_guardrail.core.claim_review import declared_evidence_ids
 from academic_guardrail.core.followup_models import LocalReviewContext
 from academic_guardrail.core.models import SourceLocation
 from academic_guardrail.core.reporter import CSS, RETRACTION_LABELS
@@ -89,6 +91,9 @@ def _validate_parent(before: dict, after: dict) -> None:
         raise ValueError("A follow-up needs its own immutable packet")
     if before["packet"].claim != after["packet"].claim:
         raise ValueError("Follow-up and parent claims differ")
+    if ((before["packet"].reference or {}).get("manuscript_occurrence")
+            != (after["packet"].reference or {}).get("manuscript_occurrence")):
+        raise ValueError("Follow-up and parent manuscript occurrences differ")
     if parent.source != child.source:
         raise ValueError("Follow-up and parent local sources differ")
     if Path(parent.refs_root).resolve() != Path(child.refs_root).resolve():
@@ -119,12 +124,18 @@ def _validate_parent(before: dict, after: dict) -> None:
 
 def build_review_chains(store: ReviewStore, review_ids: list[str]) -> list[dict]:
     """Load explicit immutable records; include a child's exact parent, never latest."""
-    selected = _selected_ids(review_ids)
+    return load_review_chains(store, _selected_ids(review_ids))
+
+
+def load_review_chains(store: ReviewStore, selected: list[str], *, manuscript_id: str | None = None,
+                       source_states: dict | None = None) -> list[dict]:
+    """Also serve a manuscript's own saved records, without the interactive 50-ID selection limit."""
     snapshots = {}
 
     def load(identifier):
         if identifier not in snapshots:
-            record = store.load_review(identifier)
+            record = (store.load_review(identifier) if manuscript_id is None
+                      else store.load_review(identifier, manuscript_id=manuscript_id))
             packet = store.load_packet(record["packet_id"])
             if record["packet_sha256"] != content_digest(packet.model_dump(mode="json")):
                 raise ValueError("Review record differs from its packet snapshot")
@@ -155,9 +166,18 @@ def build_review_chains(store: ReviewStore, review_ids: list[str]) -> list[dict]
               or chain["before"]["record"]["review_id"] not in included_parents]
     from academic_guardrail.core.local_evidence import source_status
     checked_at = datetime.now(timezone.utc).isoformat()
+    if source_states is None:
+        source_states = {}
     for chain in chains:
         context = chain["before"]["context"]
-        chain["source_status"] = source_status(context.source) if context else "UNKNOWN"
+        chain["source_status"] = "UNKNOWN"
+        if context:
+            key = (context.source.path, context.source.sha256)
+            if key not in source_states:
+                if manuscript_id is not None:
+                    raise ValueError("Review source does not belong to the pinned manuscript library")
+                source_states[key] = source_status(context.source)
+            chain["source_status"] = source_states[key]
         chain["source_status_checked_utc"] = checked_at
     return chains
 
@@ -242,7 +262,7 @@ def _lookup_html(context: LocalReviewContext | None) -> str:
     if context is None:
         return "<p>无本地追补上下文；检索范围、命中数与新增证据数未知。</p>"
     if context.round == 0:
-        return "<p>初始审查；尚未请求本地追补检索（NOT_REQUESTED）。</p>"
+        return "<p>保存这份初次判断时，尚未请求本地追补检索（NOT_REQUESTED）。</p>"
     parts = [_gap_html([context.gap.model_dump(mode="json")]) if context.gap else "",
              _fields([
                  ("检索状态", f"{context.retrieval_status} · {RETRIEVAL_LABELS.get(context.retrieval_status, '未知')}"),
@@ -258,10 +278,22 @@ def _lookup_html(context: LocalReviewContext | None) -> str:
     return "\n".join(parts)
 
 
-def _stage_html(snapshot: dict, heading: str) -> str:
+def review_quotes_html(record: dict) -> str:
+    """Render verified source substrings with the coordinates saved by the validator."""
+    parts = []
+    for quote in record.get("quotes", []):
+        location = SourceLocation.model_validate(quote["location"]) if quote.get("location") else None
+        parts.append(f"<div class='quoted'><p>{_escape(quote.get('evidence_id'))} · "
+                     f"{_escape(quote.get('source_kind'))}</p><blockquote>{_escape(quote.get('quote'))}</blockquote>"
+                     f"<p>{_escape(format_location(location))}</p></div>")
+    return "\n".join(parts) or "<p>没有提交逐字引文。</p>"
+
+
+def render_review_stage(snapshot: dict, heading: str, *, include_snapshot: bool = True) -> str:
     record, packet, context = snapshot["record"], snapshot["packet"], snapshot["context"]
     judgment = record["judgment"]
     conclusion = judgment["conclusion"]
+    reviewed = declared_evidence_ids(judgment["reviewed_evidence_ids"], {item.id for item in packet.evidence})
     evidence_scope = "未知；未记录本地范围"
     if context is not None:
         evidence_scope = "摘要" if context.initial_scope == "abstract" else "全文（以保存包为限）"
@@ -270,18 +302,13 @@ def _stage_html(snapshot: dict, heading: str) -> str:
     parts = [f"<section class='stage'><h3>{_escape(heading)}</h3>",
              f"<p class='badge'>客户端判断：{_escape(CONCLUSION_LABELS.get(conclusion, '未知'))}</p>",
              _fields([
+                 ("审查记录 ID", record.get("review_id")), ("证据包 ID", packet.packet_id),
                  ("客户端模型", judgment.get("client_model")), ("记录时间（UTC）", record.get("recorded_utc")),
                  ("证据范围", evidence_scope),
-                 ("声明审阅 / 包内证据", f"{len(judgment.get('reviewed_evidence_ids', []))} / {len(packet.evidence)}"),
+                 ("声明审阅 / 包内证据", f"{len(reviewed)} / {len(packet.evidence)}"),
              ]), "<h4>客户端判断理由</h4>", f"<p>{_escape(judgment.get('rationale'))}</p>",
              "<h4>逐字引文与坐标</h4>"]
-    for quote in record.get("quotes", []):
-        location = SourceLocation.model_validate(quote["location"]) if quote.get("location") else None
-        parts.append(f"<div class='quoted'><p>{_escape(quote.get('evidence_id'))} · "
-                     f"{_escape(quote.get('source_kind'))}</p><blockquote>{_escape(quote.get('quote'))}</blockquote>"
-                     f"<p>{_escape(format_location(location))}</p></div>")
-    if not record.get("quotes"):
-        parts.append("<p>没有提交逐字引文。</p>")
+    parts.append(review_quotes_html(record))
     parts.append("<p class='muted'>引文的字面链接已由记录读取过程核对；它是否支持该判断仍需人工阅读。</p>")
     parts.append("<h4>客户端列出的缺失证据</h4>" + _gap_html(judgment.get("missing_evidence", [])))
     parts.append("<h4>本地检索与证据增量</h4>" + _lookup_html(context))
@@ -300,10 +327,11 @@ def _stage_html(snapshot: dict, heading: str) -> str:
             ("证据 ID", " · ".join(judgment["suggested_revision"].get("evidence_ids", []))),
         ]))
     parts.append("</details>")
-    parts.append(_json_details("完整记录、证据包与本地上下文快照", {
-        "record": record, "packet": packet.model_dump(mode="json"),
-        "local_context": context.model_dump(mode="json") if context else None,
-    }))
+    if include_snapshot:
+        parts.append(_json_details("完整记录、证据包与本地上下文快照", {
+            "record": record, "packet": packet.model_dump(mode="json"),
+            "local_context": context.model_dump(mode="json") if context else None,
+        }))
     parts.append("</section>")
     return "\n".join(parts)
 
@@ -323,9 +351,9 @@ def generate_review_html(chains: list[dict]) -> str:
                          "结论变化不自动记为改进；请对照新增证据与理由阅读。</p>")
         else:
             cards.append("<p>本链仅包含所选记录；没有选择已记录的追补后判断。</p>")
-        cards.append("<div class='stages'>" + _stage_html(before, "初次审查" if before["context"] else "独立历史审查"))
+        cards.append("<div class='stages'>" + render_review_stage(before, "初次审查" if before["context"] else "独立历史审查"))
         if after:
-            cards.append(_stage_html(after, "追补后审查"))
+            cards.append(render_review_stage(after, "追补后审查"))
         cards.append("</div>" + _metadata_html(before, chain["source_status_checked_utc"]) + "</article>")
     records = sum(2 if chain["after"] else 1 for chain in chains)
     return f'''<!DOCTYPE html>
@@ -343,8 +371,7 @@ def generate_review_html(chains: list[dict]) -> str:
 </main></body></html>'''
 
 
-def save_review_report(store: ReviewStore, review_ids: list[str], output_path: str | Path) -> dict:
-    """Create a new HTML file exclusively; never overwrite a source or report."""
+def new_html_path(output_path: str | Path) -> Path:
     destination = Path(output_path).expanduser()
     if destination.is_dir():
         raise ValueError("Report output must be a new HTML file, not a directory")
@@ -352,6 +379,20 @@ def save_review_report(store: ReviewStore, review_ids: list[str], output_path: s
         raise ValueError("Report output must have an .html or .htm suffix")
     if ":" in destination.name:
         raise ValueError("Report output cannot use an alternate data stream")
+    if not destination.parent.is_dir():
+        raise ValueError(f"Report output directory does not exist: {destination.parent}")
+    return destination
+
+
+def write_new_html(destination: Path, document: str) -> None:
+    with atomic_text_file(destination) as handle:
+        handle.write(document)
+        handle.write("\n")
+
+
+def save_review_report(store: ReviewStore, review_ids: list[str], output_path: str | Path) -> dict:
+    """Create a new HTML file exclusively; never overwrite a source or report."""
+    destination = new_html_path(output_path)
     chains = build_review_chains(store, review_ids)
     resolved = destination.resolve()
     for chain in chains:
@@ -363,11 +404,7 @@ def save_review_report(store: ReviewStore, review_ids: list[str], output_path: s
             source_paths += [item.location.file_path for item in snapshot["packet"].evidence if item.location]
             if any(resolved == Path(path).resolve() for path in source_paths):
                 raise ValueError("Report output must not be a source path")
-    document = generate_review_html(chains)
-    # 'x' is the final check, including races, symlinks and existing reports.
-    with destination.open("x", encoding="utf-8", newline="\n") as handle:
-        handle.write(document)
-        handle.write("\n")
+    write_new_html(destination, generate_review_html(chains))
     return {"output_path": str(resolved), "chain_count": len(chains),
             "review_ids": [snapshot["record"]["review_id"] for chain in chains
                            for snapshot in (chain["before"], chain["after"]) if snapshot],

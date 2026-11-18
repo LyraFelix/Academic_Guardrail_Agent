@@ -14,6 +14,9 @@ class ExtractedText:
     text: str
     page_starts: list[int] = field(default_factory=list)
     diagnostics: list[ParseDiagnostic] = field(default_factory=list)
+    paragraph_starts: list[int] = field(default_factory=list)
+    list_numbers: dict[int, int | None] = field(default_factory=dict)  # Word paragraph offset -> displayed number.
+    heading_levels: dict[int, int] = field(default_factory=dict)  # Word paragraph offset -> outline level.
 
     def location(self, start: int, end: int) -> SourceLocation:
         page = None
@@ -24,18 +27,19 @@ class ExtractedText:
                               char_start=start, char_end=end)
 
 
-def _docx_text(path: Path, source_bytes: bytes | None = None) -> tuple[str, bool]:
+def _read_docx(path: Path, raw_bytes: bytes) -> ExtractedText:
     from docx import Document
     from docx.table import Table
     from docx.text.paragraph import Paragraph
+    from academic_guardrail.core.docx_numbering import paragraph_layout
 
-    doc = Document(BytesIO(source_bytes) if source_bytes is not None else str(path))
-    lines = []
+    doc = Document(BytesIO(raw_bytes))
+    paragraphs = []
 
     def read_elements(elements, parent):
         for element in elements:
             if element.tag.endswith("}p"):
-                lines.append(Paragraph(element, parent).text)
+                paragraphs.append(Paragraph(element, parent))
             elif element.tag.endswith("}tbl"):
                 table = Table(element, parent)
                 # Merged cells share XML nodes; read each physical cell once.
@@ -47,8 +51,20 @@ def _docx_text(path: Path, source_bytes: bytes | None = None) -> tuple[str, bool
                             read_elements(cell._tc, cell)
 
     read_elements(doc.element.body, doc)
-    unsupported = bool(doc.element.xpath(".//w:footnoteReference | .//w:endnoteReference | .//w:txbxContent"))
-    return "\n".join(lines), unsupported
+    texts = [p.text for p in paragraphs]
+    document = ExtractedText(str(path), "\n".join(texts))
+    # Keep actual paragraph starts distinct from manual line breaks inside a paragraph.
+    offset = 0
+    for text in texts:
+        document.paragraph_starts.append(offset)
+        offset += len(text) + 1
+    numbers, headings = paragraph_layout(doc, paragraphs)
+    document.list_numbers = {document.paragraph_starts[i]: n for i, n in numbers.items()}
+    document.heading_levels = {document.paragraph_starts[i]: n for i, n in headings.items()}
+    if doc.element.xpath(".//w:footnoteReference | .//w:endnoteReference | .//w:txbxContent"):
+        document.diagnostics.append(ParseDiagnostic(
+            code="UNSUPPORTED_DOCX_CONTENT", message="检测到脚注、尾注或文本框；当前仅读取正文段落和表格。"))
+    return document
 
 
 def read_document(file_path: str, *, source_bytes: bytes | None = None) -> ExtractedText:
@@ -77,12 +93,7 @@ def read_document(file_path: str, *, source_bytes: bytes | None = None) -> Extra
                 offset += len(text) + 2
             return document
         if path.suffix.lower() == ".docx":
-            text, unsupported = _docx_text(path, raw_bytes)
-            document = ExtractedText(str(path), text)
-            if unsupported:
-                document.diagnostics.append(ParseDiagnostic(
-                    code="UNSUPPORTED_DOCX_CONTENT", message="检测到脚注、尾注或文本框；当前仅读取正文段落和表格。"))
-            return document
+            return _read_docx(path, raw_bytes)
         # Match the universal-newline behavior of the legacy text-mode reader.
         text = raw_bytes.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
         return ExtractedText(str(path), text)

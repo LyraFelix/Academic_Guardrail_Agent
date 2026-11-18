@@ -1,5 +1,7 @@
 """Give the client complete evidence; validate links without certifying reasoning."""
 
+import re
+
 from academic_guardrail.core.claim_checks.text import sentence_units
 from academic_guardrail.core.models import EvidencePassage, VerificationResult, VerificationStatus
 from academic_guardrail.core.passages import locate_excerpt
@@ -70,12 +72,32 @@ def packet_response(packet: ReviewPacket, digest: str) -> dict:
             "instructions": packet.instructions}
 
 
+def declared_evidence_ids(declarations: list[str], available: set[str]) -> set[str]:
+    """Resolve explicit IDs and inclusive ranges against this packet only."""
+    reviewed = set()
+    for declaration in declarations:
+        match = re.fullmatch(r"(e[1-9][0-9]*)[-–](e[1-9][0-9]*)", declaration)
+        if match:
+            first, last = match.groups()
+            if first not in available or last not in available:
+                raise ValueError("Unknown endpoint in reviewed evidence range")
+            start, end = int(first[1:]), int(last[1:])
+            if end < start or end - start + 1 > len(available):
+                raise ValueError("Invalid reviewed evidence range for this packet")
+            declared = (f"e{number}" for number in range(start, end + 1))
+        else:
+            declared = (declaration,)
+        for evidence_id in declared:
+            if evidence_id not in available or evidence_id in reviewed:
+                raise ValueError("Duplicate or unknown reviewed evidence IDs")
+            reviewed.add(evidence_id)
+    return reviewed
+
+
 def validate_client_judgment(packet: ReviewPacket, judgment: ClientJudgment) -> dict:
     """Check the declared coverage and literal quotes, not semantic correctness."""
     indexed = {item.id: item for item in packet.evidence}
-    reviewed = set(judgment.reviewed_evidence_ids)
-    if len(reviewed) != len(judgment.reviewed_evidence_ids) or reviewed - set(indexed):
-        raise ValueError("Duplicate or unknown reviewed evidence IDs")
+    reviewed = declared_evidence_ids(judgment.reviewed_evidence_ids, set(indexed))
     if judgment.conclusion != "UNCERTAIN" and reviewed != set(indexed):
         raise ValueError("Resolved judgments must declare every packet evidence ID as considered; read remaining pages first")
     decisive = judgment.conclusion in {"SUPPORTED", "CONTRADICTED"}

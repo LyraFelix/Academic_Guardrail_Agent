@@ -45,6 +45,24 @@ def test_docx_table_is_read_in_body_order(tmp_path):
     assert all(c.location.page is None for c in parsed.occurrences)
 
 
+def test_docx_claim_boundaries_distinguish_paragraphs_from_manual_line_breaks(tmp_path):
+    from docx import Document
+    from academic_guardrail.core.text_extraction import read_document
+    doc = Document()
+    paragraphs = ["Study title", "First uncited paragraph.", "[1] reports a result across\ntwo lines.",
+                  "Unpunctuated heading", "The second observation [1].", "References", "[1] Smith. Trial[J]. 2024."]
+    for text in paragraphs:
+        doc.add_paragraph(text)
+    path = tmp_path / "paragraphs.docx"
+    doc.save(path)
+    source = read_document(str(path))
+    assert source.text == "\n".join(paragraphs)
+    occurrences = DocumentParser().parse(str(path)).occurrences
+    assert [item.claim_sentence for item in occurrences] == [paragraphs[2], paragraphs[4]]
+    assert [item.location.line for item in occurrences] == [3, 6]
+    assert all(source.text[item.location.char_start:item.location.char_end] == "[1]" for item in occurrences)
+
+
 def test_invalid_local_file_is_reported_instead_of_silently_skipped(tmp_path):
     (tmp_path / "broken.pdf").write_bytes(b"not a pdf")
     store = LocalRefStore(str(tmp_path))

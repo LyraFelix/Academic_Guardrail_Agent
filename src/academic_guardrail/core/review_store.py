@@ -9,6 +9,7 @@ import re
 from uuid import uuid4
 
 from academic_guardrail.core import cache
+from academic_guardrail.core.atomic_file import atomic_text_file
 from academic_guardrail.core.claim_review import validate_client_judgment
 from academic_guardrail.core.review_models import ClientJudgment, ReviewPacket
 from academic_guardrail.core.followup_models import LocalReviewContext
@@ -30,8 +31,8 @@ class ReviewStore:
         return self.directory / f"{identifier}.{kind}.json"
 
     def _write_new(self, path: Path, content: dict):
-        self.directory.mkdir(parents=True, exist_ok=True)
-        with path.open("x", encoding="utf-8") as handle:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with atomic_text_file(path) as handle:
             json.dump(content, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
 
@@ -57,6 +58,9 @@ class ReviewStore:
         if digest != expected_packet_sha256:
             raise ValueError("Stored packet differs from the client-reviewed snapshot")
         context = self.load_context(packet_id)
+        binding = (packet.reference or {}).get("manuscript_occurrence")
+        if binding:
+            self.check_current_manuscript(binding)
         if context is not None:
             from academic_guardrail.core.local_evidence import ensure_current_source
             ensure_current_source(context.source)
@@ -67,12 +71,26 @@ class ReviewStore:
             record["local_context_sha256"] = content_digest(context.model_dump(mode="json"))
         record["review_sha256"] = content_digest(record)
         path = self._path(record["review_id"], "review")
+        if binding:
+            # Store once, beside other judgments from this manuscript. A report can
+            # discover every saved record without scanning unrelated papers or sessions.
+            path = self._manuscript_reviews_dir(binding["manuscript_id"]) / path.name
         self._write_new(path, record)
         return {**record, "record_path": str(path.resolve())}
 
-    def load_review(self, review_id: str) -> dict:
+    def load_review(self, review_id: str, *, manuscript_id: str | None = None) -> dict:
         """Verify the saved snapshot and recheck quote links, not the model's reasoning."""
-        record = json.loads(self._path(review_id, "review").read_text(encoding="utf-8"))
+        path = self._path(review_id, "review")
+        if manuscript_id is not None:
+            path = self._manuscript_reviews_dir(manuscript_id) / path.name
+        elif not path.is_file():
+            # Legacy single-record tools receive only a UUID, including for a follow-up.
+            matches = list((self.directory / "manuscripts").glob(f"*/{path.name}"))
+            if len(matches) > 1:
+                raise ValueError("Review ID occurs in multiple manuscripts")
+            if matches:
+                path = matches[0]
+        record = json.loads(path.read_text(encoding="utf-8"))
         if record.get("review_id") != review_id:
             raise ValueError("Stored review ID differs from requested ID")
         unsigned = {key: value for key, value in record.items() if key != "review_sha256"}
@@ -93,6 +111,38 @@ class ReviewStore:
                 raise ValueError("Review record no longer matches its local context")
         # Legacy records have no stored record digest; this is their current content hash.
         return {**record, "review_sha256": digest}
+
+    def _manuscript_reviews_dir(self, manuscript_id: str) -> Path:
+        self._path(manuscript_id, "manuscript")  # Validate the UUID before using it as a directory name.
+        return self.directory / "manuscripts" / manuscript_id
+
+    def manuscript_review_ids(self, manuscript_id: str) -> list[str]:
+        return sorted(path.name.split(".")[0] for path in self._manuscript_reviews_dir(manuscript_id).glob("*.review.json"))
+
+    def save_manuscript(self, snapshot: dict) -> None:
+        path = self._path(snapshot["manuscript_id"], "manuscript")
+        self._write_new(path, {"sha256": content_digest(snapshot), "manuscript": snapshot})
+
+    def load_manuscript(self, manuscript_id: str) -> dict:
+        path = self._path(manuscript_id, "manuscript")
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        snapshot = saved["manuscript"]
+        if snapshot["manuscript_id"] != manuscript_id or content_digest(snapshot) != saved["sha256"]:
+            raise ValueError("Manuscript snapshot ID or checksum mismatch")
+        return snapshot
+
+    def check_current_manuscript(self, binding: dict) -> None:
+        from academic_guardrail.core.local_evidence import snapshot_bytes
+        snapshot = self.load_manuscript(binding["manuscript_id"])
+        row = snapshot["packets"].get(binding["occurrence_id"], {})
+        if (binding["manuscript_sha256"] != snapshot["manuscript_sha256"]
+                or binding["document_path"] != snapshot["document_path"]
+                or binding["citation_id"] != row.get("citation_id")
+                or binding["root_packet_id"] != row.get("packet_id")):
+            raise ValueError("Packet does not belong to the saved manuscript occurrence")
+        status = snapshot_bytes(snapshot["document_path"], snapshot["manuscript_sha256"])[1]
+        if status != "CURRENT":
+            raise ValueError(f"Manuscript is {status}; prepare a new manuscript review for the current draft")
 
     def save_context(self, context: LocalReviewContext) -> None:
         packet = self.load_packet(context.packet_id)
@@ -142,3 +192,17 @@ class ReviewStore:
 
     def save_followup_result(self, packet_id: str, result: dict) -> None:
         self._write_new(self._path(packet_id, "followup_result"), result)
+
+    def followup_attempt(self, packet_id: str) -> dict | None:
+        """A request may have been reserved but not finished when a report is generated."""
+        request_path = self._path(packet_id, "followup_request")
+        if not request_path.is_file():
+            return None
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        result_path = self._path(packet_id, "followup_result")
+        if not result_path.is_file():
+            return {**request, "status": "NO_SAVED_RESULT"}
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if any(result.get(key) != request[key] for key in ("review_id", "review_sha256", "gap_index")):
+            raise ValueError("Follow-up request and result belong to different judgments")
+        return result

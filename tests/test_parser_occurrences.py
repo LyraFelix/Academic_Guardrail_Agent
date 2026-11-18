@@ -33,6 +33,36 @@ def test_wrapped_reference_without_type_tag_parses_title_and_authors(tmp_path):
     assert "\nfor Clinical" in citation.raw_text
 
 
+@pytest.mark.parametrize(("author_field", "authors"), [
+    ("J. Smith and P. Brown.", ["J. Smith", "P. Brown"]),
+    ("Smith, J., & Brown, P. (2024).", ["Smith, J.", "Brown, P."]),
+    ("J. R. Smith, P. Brown, and A. Lee.", ["J. R. Smith", "P. Brown", "A. Lee"]),
+    ("Smith, J. R., Brown, P., & Lee, A. (2024).", ["Smith, J. R.", "Brown, P.", "Lee, A."]),
+])
+def test_numbered_bibliography_keeps_dotted_initials_out_of_the_title(tmp_path, author_field, authors):
+    from academic_guardrail.core.ref_store import LocalRefStore
+    title = "A comparison of image encoders"
+    doi = "10.1234/papers"
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    (refs / "study.txt").write_text(f"{title}\nJane Smith, Paul Brown\n2024\nDOI: {doi}\n\nResults\nA result.", encoding="utf-8")
+    library = LocalRefStore(str(refs))
+    for supplied, matches in ((title, True), ("Coastal erosion in South America", False)):
+        entry = f"[1] {author_field} {supplied}. Journal, 2024. doi: {doi}"
+        parsed, _ = parse_file(tmp_path, "A claim [1].\n\nReferences\n" + entry)
+        citation, = parsed.citations
+        assert (citation.title, citation.authors, citation.year, citation.doi) == (supplied, authors, 2024, doi)
+        assert citation.raw_text == entry
+        assert bool(library.find_match(citation)) == matches
+
+
+@pytest.mark.parametrize("authors", ["Smith", "Smith J, Doe A", "J. Smith and P. Brown"])
+def test_parenthesized_year_in_title_cannot_be_read_as_an_author_date(tmp_path, authors):
+    entry = f"[1] {authors}. Follow-up of a local cohort (2024). Journal, 2025."
+    parsed, _ = parse_file(tmp_path, "A finding [1].\n\nReferences\n" + entry)
+    assert parsed.citations[0].title == "Follow-up of a local cohort (2024)"
+
+
 def test_uncited_bibliography_is_metadata_only(tmp_path):
     parsed, path = parse_file(tmp_path, "References\n[1] Smith. A clinical study[J]. 2024.")
     assert len(parsed.citations) == 1
@@ -148,3 +178,21 @@ def test_unsupported_reference_style_cannot_manufacture_doi_body_claim(tmp_path)
 def test_adjacent_post_sentence_citations_keep_opposed_claims_separate(tmp_path):
     parsed, _ = parse_file(tmp_path, "Treatment improves survival. [1] Treatment reduces survival. [1]\nReferences\n[1] Smith. Trial[J]. 2024.")
     assert [c.claim_sentence for c in parsed.occurrences] == ["Treatment improves survival. [1]", "Treatment reduces survival. [1]"]
+
+
+@pytest.mark.parametrize(("body", "claim"), [
+    ("Chen et al. [1] report an accuracy gain of 5 points.",
+     "Chen et al. [1] report an accuracy gain of 5 points."),
+    ("Earlier work disagrees. [1] reports an independent result.", "[1] reports an independent result."),
+    ("先前的研究存在分歧。[1]提出了新方法。", "[1]提出了新方法。"),
+    ("In Fig. 2, Chen et al. report an effect (e.g. in adults) [1].",
+     "In Fig. 2, Chen et al. report an effect (e.g. in adults) [1]."),
+    ("We follow Chen et al. The current trial lasted ten days [1].", "The current trial lasted ten days [1]."),
+    ("The initial answer is no. We cite participant no. 2 [1].", "We cite participant no. 2 [1]."),
+    ("# Study title\nThe cohort improved [1].", "The cohort improved [1]."),
+])
+def test_citation_is_attached_to_the_complete_scholarly_sentence(tmp_path, body, claim):
+    parsed, _ = parse_file(tmp_path, body + "\n\nReferences\n[1] Smith. Trial[J]. 2024.")
+    occurrence, = parsed.occurrences
+    assert occurrence.claim_sentence == claim
+    assert body[occurrence.location.char_start:occurrence.location.char_end] == "[1]"

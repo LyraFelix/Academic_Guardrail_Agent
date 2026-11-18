@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from academic_guardrail.core.claim_review import build_review_packet
-from academic_guardrail.core.followup_models import LocalReviewContext
+from academic_guardrail.core.followup_models import LocalReviewContext, LocalSource
 from academic_guardrail.core.local_evidence import (
     ensure_current_source, search_local_evidence, snapshot_for_record,
 )
@@ -24,7 +24,8 @@ For an initial NOT_ENOUGH_EVIDENCE or UNCERTAIN judgment, follow_up_local_claim 
 search this same paper once using one recorded gap and the returned review_sha256.
 Read all pages of the new packet, consider new AND old evidence, and record a new
 judgment. A retrieval hit or changed conclusion is not proof of correctness.
-Export explicit saved review IDs with generate_claim_review_report.
+For a manuscript, export all occurrences with generate_manuscript_review_report.
+For a single claim, export its saved IDs with generate_claim_review_report.
 """
 
 
@@ -50,6 +51,13 @@ async def prepare_local_review(claim: str, citation_str_or_doi: str, refs_dir: s
         raise ValueError("Local reference identity is absent or ambiguous")
     paper = PaperRecord.model_validate(match)
     source = snapshot_for_record(paper, str(root))
+    return save_initial_packet(store or ReviewStore(), claim, reference, paper, source, str(root), initial_scope)
+
+
+def save_initial_packet(storage: ReviewStore, claim: str, reference: VerificationResult, paper: PaperRecord,
+                        source: LocalSource, refs_root: str, initial_scope: str,
+                        *, manuscript_binding: dict | None = None) -> ReviewPacket:
+    """Reuse an already resolved paper; keep one distinct packet per manuscript occurrence."""
     if initial_scope == "full_text":
         passages = paper.passages
     else:
@@ -57,12 +65,15 @@ async def prepare_local_review(claim: str, citation_str_or_doi: str, refs_dir: s
                                      location=paper.abstract_location)] if paper.abstract else [])
     packet = build_review_packet(claim, passages, reference)
     packet.reference["local_source_binding"] = source.model_dump(mode="json")
+    if manuscript_binding is not None:
+        packet.reference["manuscript_occurrence"] = {**manuscript_binding, "root_packet_id": packet.packet_id}
     packet.instructions = (packet.instructions + LOCAL_INSTRUCTIONS).strip()
-    storage = store or ReviewStore()
-    ensure_current_source(source)
+    # Manuscript preparation pins each indexed paper once, then checks again on recording/export.
+    if manuscript_binding is None:
+        ensure_current_source(source)
     digest = storage.save_packet(packet)
     storage.save_context(LocalReviewContext(packet_id=packet.packet_id, packet_sha256=digest,
-                         source=source, refs_root=str(root), citation=citation, initial_scope=initial_scope))
+                         source=source, refs_root=refs_root, citation=reference.citation, initial_scope=initial_scope))
     return packet
 
 
@@ -106,6 +117,9 @@ def follow_up_review(review_id: str, expected_review_sha256: str, gap_index: int
     if not isinstance(gap_index, int) or not 0 <= gap_index < len(gaps):
         raise ValueError("Select an existing recorded missing-evidence description")
     gap = gaps[gap_index]
+    manuscript_binding = (parent.reference or {}).get("manuscript_occurrence")
+    if manuscript_binding:
+        storage.check_current_manuscript(manuscript_binding)
     ensure_current_source(context.source)
     request = {"review_id": review_id, "review_sha256": expected_review_sha256, "gap_index": gap_index}
     storage.reserve_followup(parent.packet_id, request)
@@ -126,6 +140,8 @@ def follow_up_review(review_id: str, expected_review_sha256: str, gap_index: int
         child = build_review_packet(parent.claim, passages, reference)
         child.evidence = combined  # Preserve every original ID and exact source location.
         child.reference["local_source_binding"] = context.source.model_dump(mode="json")
+        if manuscript_binding:
+            child.reference["manuscript_occurrence"] = manuscript_binding
         child.instructions = (child.instructions + LOCAL_INSTRUCTIONS +
                               "\nThis is the final lookup round; report any remaining gaps.").strip()
         # Recomputed hints refer to the same ordered evidence, never a new semantic answer.

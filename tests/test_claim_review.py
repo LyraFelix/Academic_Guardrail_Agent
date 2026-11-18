@@ -60,6 +60,37 @@ def test_valid_quotes_do_not_certify_model_reasoning():
     assert result["quotes"][0]["location"]["char_start"] == 100
 
 
+def test_declared_range_survives_storage_and_quotes_still_bind_to_one_unit(tmp_path):
+    value = packet()
+    store = ReviewStore(tmp_path)
+    digest = store.save_packet(value)
+    saved = store.record(value.packet_id, judgment(value, reviewed_evidence_ids=["e1-e2"]), digest)
+    loaded = store.load_review(saved["review_id"])
+    assert loaded["judgment"]["reviewed_evidence_ids"] == ["e1-e2"]
+    assert loaded["quotes"][0]["evidence_id"] == "e1"
+    assert loaded["quotes"][0]["location"]["char_start"] == 100
+    with pytest.raises(ValueError, match="unknown or unreviewed"):
+        store.record(value.packet_id, judgment(value, reviewed_evidence_ids=["e1-e2"],
+                     quotes=[{"evidence_id": "e1-e2", "quote": value.evidence[0].text}]), digest)
+
+
+@pytest.mark.parametrize("declarations", [
+    ["e2-e1"], ["e1-e3"], ["e0-e2"], ["e1-e2", "e2"], ["e1-e2", "e2-e2"],
+    ["e1-"], ["all"], ["e1-e99999999999999999999999"],
+])
+def test_declared_ranges_reject_unknown_reversed_or_overlapping_ids(declarations):
+    value = packet()
+    with pytest.raises(ValueError):
+        validate_client_judgment(value, judgment(value, reviewed_evidence_ids=declarations))
+
+
+def test_range_cannot_bridge_a_missing_packet_id():
+    value = packet()
+    value.evidence[1].id = "e3"
+    with pytest.raises(ValueError):
+        validate_client_judgment(value, judgment(value, reviewed_evidence_ids=["e1-e3"]))
+
+
 def test_numeric_comparison_abbreviation_keeps_both_sides_and_offsets():
     text = "The mean was 43 vs. 33 units (P = 0.01). A second result follows."
     source = EvidencePassage(text=text, source_kind="LOCAL_FULLTEXT", location=SourceLocation(

@@ -6,7 +6,7 @@ from typing import Optional
 
 from academic_guardrail.core.exceptions import ProviderError, RateLimitError
 from academic_guardrail.core.models import (
-    Citation, ContextClaim, DocumentAuditReport, RiskLevel, EvidencePassage, EvidenceStatus,
+    Citation, ContextClaim, DocumentAuditReport, ParsedDocument, RiskLevel, EvidencePassage, EvidenceStatus,
     VerificationResult, VerificationStatus,
 )
 from academic_guardrail.core.parser import DocumentParser
@@ -24,6 +24,7 @@ class PreparedReference:
 
     result: VerificationResult
     passages: list[EvidencePassage]
+    local_path: str | None = None  # Only the local resolver's unambiguous, eligible match.
 
 
 class AuditService:
@@ -169,7 +170,10 @@ class AuditService:
                 if local.get("abstract_location"):
                     from academic_guardrail.core.models import SourceLocation
                     result.evidence_location = SourceLocation.model_validate(local["abstract_location"])
-        return PreparedReference(result, passages)
+        local_path = None
+        if result.status == VerificationStatus.VALID and local and not local.get("is_uncertain"):
+            local_path = local["filepath"]
+        return PreparedReference(result, passages, local_path)
 
     async def verify_single_item(self, cit: Citation, claim: Optional[ContextClaim],
                                  ref_store: Optional[LocalRefStore] = None) -> VerificationResult:
@@ -235,6 +239,12 @@ class AuditService:
                              refs_dir: Optional[str] = None) -> DocumentAuditReport:
         parsed = self.parser.parse(file_path)
         ref_store = LocalRefStore(refs_dir, excluded_paths=[file_path]) if refs_dir else None
+        report, _ = await self.audit_parsed_document(file_path, parsed, ref_store)
+        return report
+
+    async def audit_parsed_document(self, file_path: str, parsed: ParsedDocument,
+                                   ref_store: Optional[LocalRefStore]):
+        """Return the report and its original identity decisions from a single reference scan."""
         semaphore = asyncio.Semaphore(self.max_concurrency)
 
         async def bounded_prepare(citation):
@@ -246,7 +256,7 @@ class AuditService:
         results = [self._evaluate_occurrence(by_id[claim.citation_id], claim) for claim in parsed.occurrences]
         cited_ids = {claim.citation_id for claim in parsed.occurrences}
         results.extend(item.result for item in prepared if item.result.citation.id not in cited_ids)
-        return DocumentAuditReport(
+        report = DocumentAuditReport(
             document_path=file_path, offline=self.offline, total_citations=len(results),
             total_references=sum(cit.parse_status != "MISSING" for cit in parsed.citations),
             total_occurrences=len(parsed.occurrences),
@@ -257,3 +267,4 @@ class AuditService:
             danger_count=sum(r.risk_level == RiskLevel.DANGER for r in results),
             results=results,
         )
+        return report, by_id

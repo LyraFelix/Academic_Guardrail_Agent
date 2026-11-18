@@ -71,7 +71,10 @@ class MissingEvidence(ReviewModel):
 class ClientJudgment(ReviewModel):
     conclusion: Literal["SUPPORTED", "CONTRADICTED", "NOT_ENOUGH_EVIDENCE", "UNCERTAIN"]
     rationale: str = Field(min_length=1, max_length=6000)
-    reviewed_evidence_ids: list[str]
+    reviewed_evidence_ids: list[str] = Field(
+        description="IDs explicitly considered in this packet, e.g. ['e1-e24', 'e25']. "
+                    "Ranges include both endpoints. Quotes and findings refer to individual IDs."
+    )
     quotes: list[ReviewQuote]
     checks: ReviewChecks
     client_model: str = Field(default="unspecified", min_length=1, max_length=200)

@@ -20,7 +20,7 @@ from scripts.validate_phase_two import CHILD, GUARDS
 @pytest.mark.parametrize("connection", ["initialize", "discover"])
 @pytest.mark.parametrize("entrypoint", ["guarded_main", "console_script"])
 async def test_stdio_workflow_and_wire_contract(tmp_path, connection, entrypoint):
-    """Both existing hosts and modern discovery reach the same ten tools."""
+    """Both existing hosts and modern discovery reach the manuscript and single-claim tools."""
     boundary = tmp_path / "boundary.json"
     command = sys.executable
     args = ["-X", "utf8", "-c", CHILD, str(boundary), json.dumps(GUARDS)]
@@ -55,6 +55,7 @@ async def test_stdio_workflow_and_wire_contract(tmp_path, connection, entrypoint
                 "prepare_claim_review", "read_claim_evidence", "record_claim_review",
                 "prepare_local_claim_review", "follow_up_local_claim",
                 "generate_claim_review_report",
+                "prepare_manuscript_review", "generate_manuscript_review_report",
             }
             required = tools["record_claim_review"].input_schema["required"]
             assert set(required) == {"packet_id", "judgment", "expected_packet_sha256"}

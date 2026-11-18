@@ -64,14 +64,17 @@ li { margin:8px 0; } details { margin-top:12px; } summary { cursor:pointer; }
 SCRIPT = """
 const search = document.getElementById('search');
 const riskFilter = document.getElementById('risk-filter');
+const reviewFilter = document.getElementById('review-filter');
 const cards = Array.from(document.querySelectorAll('.citation-card'));
 function applyFilters() {
   const query = search.value.trim().toLowerCase();
   let visible = 0;
   for (const card of cards) {
     const matchesRisk = riskFilter.value === 'all' || card.dataset.risk === riskFilter.value;
+    const outcome = card.querySelector('[data-review-outcome]')?.dataset.reviewOutcome || 'METADATA';
+    const matchesReview = !reviewFilter || reviewFilter.value === 'all' || reviewFilter.value === outcome;
     const matchesText = card.textContent.toLowerCase().includes(query);
-    card.hidden = !(matchesRisk && matchesText);
+    card.hidden = !(matchesRisk && matchesReview && matchesText);
     if (!card.hidden) visible += 1;
   }
   document.getElementById('visible-count').textContent = `显示 ${visible} / ${cards.length} 条`;
@@ -79,6 +82,7 @@ function applyFilters() {
 }
 search.addEventListener('input', applyFilters);
 riskFilter.addEventListener('change', applyFilters);
+if (reviewFilter) reviewFilter.addEventListener('change', applyFilters);
 document.getElementById('theme-toggle').addEventListener('click', function () {
   const dark = document.documentElement.classList.toggle('dark');
   this.setAttribute('aria-pressed', String(dark));
@@ -178,11 +182,12 @@ class ReportGenerator:
             lines.append("")
         return "\n".join(lines)
 
-    def _card(self, result):
+    def _card(self, result, client_review_html: str = ""):
         title = result.verified_title or result.citation.title or result.citation.raw_text
         risk = result.risk_level.name.lower()
+        status_label = "规则及元数据核查状态" if client_review_html else "核查状态"
         fields = [("原始引用", result.citation.raw_text), ("条目位置", result.citation.location_info),
-                  ("核查状态", result.status), ("撤稿检查", _retraction(result)), ("说明", result.message)]
+                  (status_label, result.status), ("撤稿检查", _retraction(result)), ("说明", result.message)]
         for label, attribute in (("证据状态", "evidence_status"), ("失败原因", "failure_reason"),
                                  ("撤稿说明", "retraction_info"), ("核查范围", "verification_scope"),
                                  ("元数据匹配分数", "reference_confidence"), ("检索相似度（非真实性概率）", "claim_alignment_score"),
@@ -192,13 +197,22 @@ class ReportGenerator:
             if value is not None:
                 fields.append((label, value))
         details = "".join(f"<dt>{label}</dt><dd>{_escape(value)}</dd>" for label, value in fields)
-        parts = [f'<article class="citation-card" data-risk="{_escape(risk)}">',
-                 f'<span class="badge">{_escape(result.risk_level)}</span>',
-                 f"<h3>[{_escape(result.citation.id)}] {_escape(title)}</h3>",
-                 f"<dl>{details}<dt>DOI / 标识符</dt><dd>{_doi_html(result.verified_doi or result.citation.doi)}</dd></dl>"]
+        metadata = f"<dl>{details}<dt>DOI / 标识符</dt><dd>{_doi_html(result.verified_doi or result.citation.doi)}</dd></dl>"
+        parts = [f'<article class="citation-card" data-risk="{_escape(risk)}">']
+        if not client_review_html:
+            parts.append(f'<span class="badge">{_escape(result.risk_level)}</span>')
+        parts.append(f"<h3>[{_escape(result.citation.id)}] {_escape(title)}</h3>")
+        if not client_review_html:
+            parts.append(metadata)
         if result.claim:
             parts.append(f"<p>引用位置：{_escape(result.claim.occurrence_id)} · {_escape(format_location(result.claim.location))}</p>")
             parts.append(f"<h4>正文断言</h4><blockquote>{_escape(result.claim.claim_sentence)}</blockquote>")
+        if client_review_html:
+            if _text(result.retraction_status) in {"CONFIRMED", "SUSPECTED"}:
+                parts.append(f"<p><strong>撤稿检查 · {_escape(_retraction(result))}</strong> "
+                             f"{_doi_html(result.verified_doi or result.citation.doi)}</p>")
+            parts.extend([client_review_html, "<details class='rule-details'><summary>本地规则与文献元数据 · "
+                          f"{_escape(result.risk_level)}</summary>", metadata])
         for item in result.semantic_findings:
             parts.append(f"<h4>语义提示 · {_escape(item.code)} / {_escape(item.severity)}</h4><p>{_escape(item.message)}</p>")
             parts.append(f"<p>触发断言</p><blockquote>{_escape(item.claim_text)}</blockquote>")
@@ -220,9 +234,13 @@ class ReportGenerator:
             rows = "".join("<li>" + " · ".join(_escape(candidate.get(key)) for key in ("title", "doi", "score", "source")) + "</li>"
                            for candidate in result.ambiguous_candidates)
             parts.append(f"<details><summary>待人工消歧的候选文献</summary><ul>{rows}</ul></details>")
+        if client_review_html:
+            parts.append("</details>")
         return "\n".join(parts) + "</article>"
 
-    def generate_html(self, report: DocumentAuditReport) -> str:
+    def generate_html(self, report: DocumentAuditReport, *, review_summary_html: str = "",
+                      occurrence_html: dict[str, str] | None = None) -> str:
+        """Optional sections are already escaped by the manuscript review renderer."""
         name = _escape(ntpath.basename(report.document_path))
         mode = "离线：仅使用本地数据，未执行在线检索或语义模型加载。" if getattr(report, "offline", False) else "在线核查：实际查询结果与可用性请查看每条引用的来源和状态。"
         counts = [("文献条目", report.total_references), ("正文引用次数", report.total_occurrences),
@@ -230,24 +248,40 @@ class ReportGenerator:
                   ("NOTICE", report.notice_count), ("WARNING", report.warning_count), ("DANGER", report.danger_count)]
         summary = "".join(f"<div>{label}<strong>{_escape(count)}</strong></div>" for label, count in counts)
         options = '<option value="all">全部风险</option>' + "".join(f'<option value="{risk.name.lower()}">{risk.value}</option>' for risk in RiskLevel)
-        cards = "\n".join(self._card(result) for result in report.results)
+        review_styles = ""
+        outcome_filter = ""
+        risk_label = "风险筛选"
+        if occurrence_html is not None:
+            from academic_guardrail.core.followup_report import CONCLUSION_LABELS, EXTRA_CSS
+            review_styles = EXTRA_CSS
+            risk_label = "规则风险筛选"
+            labels = {**CONCLUSION_LABELS, "PENDING": "待判断", "BLOCKED": "来源受阻",
+                      "MULTIPLE_REVIEWS": "多条独立判断", "METADATA": "仅参考条目"}
+            choices = "".join(f'<option value="{key}">{_escape(label)}</option>' for key, label in labels.items())
+            outcome_filter = ('<label for="review-filter">客户端审查 <select id="review-filter">'
+                              '<option value="all">全部结果</option>' + choices + '</select></label>')
+        sections = occurrence_html or {}
+        cards = "\n".join(self._card(result, sections.get(result.claim.occurrence_id, "") if result.claim else "")
+                          for result in report.results)
         empty = f'<p class="empty">{EMPTY}</p>' if not report.results else ""
         diagnostics = ""
         if report.parse_diagnostics:
             diagnostics = "<section class='scope'><h2>解析 / 文件提示</h2><ul>" + "".join(
                 f"<li>{_escape(format_diagnostic(item))}</li>" for item in report.parse_diagnostics) + "</ul></section>"
+        rule_summary = (f'<p class="scope">{SCOPE}</p><section class="summary" aria-label="核查计数">{summary}</section>'
+                        f'<p class="muted">{_escape(format_counts(report))}</p>')
+        if occurrence_html is not None:
+            rule_summary = "<details><summary>文献元数据与规则计数</summary>" + rule_summary + "</details>"
         return f'''<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<title>引用核查报告 · {name}</title><style>{CSS}</style></head>
+<title>引用核查报告 · {name}</title><style>{CSS}{review_styles}</style></head>
 <body><main><header><div><h1>学术论文引用与断言审查报告</h1><p>{name}</p></div>
 <button type="button" id="theme-toggle" aria-pressed="false">深色模式</button></header>
-<p class="muted">{mode}</p><p class="scope">{SCOPE}</p>
-<section class="summary" aria-label="核查计数">{summary}</section>
-<p class="muted">{_escape(format_counts(report))}</p>{diagnostics}
+<p class="muted">服务端 · {mode}</p>{review_summary_html}{rule_summary}{diagnostics}
 <h2>引用核查明细</h2><div class="controls">
-<label for="risk-filter">风险筛选 <select id="risk-filter">{options}</select></label>
+{outcome_filter}<label for="risk-filter">{risk_label} <select id="risk-filter">{options}</select></label>
 <label for="search">搜索 <input id="search" type="search" placeholder="标题、DOI、断言或来源"></label>
 <span id="visible-count" role="status" aria-live="polite"></span></div>
 <noscript><p>JavaScript 未启用：下方完整报告仍可阅读，筛选和主题切换不可用。</p></noscript>

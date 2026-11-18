@@ -53,6 +53,8 @@ REVIEW_INSTRUCTIONS = SEMANTIC_REVIEW_INSTRUCTIONS + """
 Read every evidence page and retain the packet_sha256 from prepare. All pages
 must have the same digest. Return the structured judgment with exact quotes and
 evidence IDs; call record_claim_review with expected_packet_sha256 to save it.
+In reviewed_evidence_ids you can declare an inclusive range such as e1-e24 after
+considering those units. Use individual evidence IDs for quotes and findings.
 Correct rejected quotes, IDs or inconsistent findings using the evidence, never
 by inventing source text. Only request human input for missing sources or a
 meaning/judgment you cannot resolve."""

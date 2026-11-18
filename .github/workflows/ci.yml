@@ -56,6 +56,7 @@ jobs:
         python scripts/validate_phase_three.py --output-dir scratch/phase_three
         python scripts/validate_client_review.py --output-dir scratch/client_review
         python -m scripts.validate_local_followup --output scratch/local_followup
+        python -m scripts.validate_manuscript_review --output scratch/manuscript_demo
 
     - name: Save environment, test results and workflow evidence
       if: always()
